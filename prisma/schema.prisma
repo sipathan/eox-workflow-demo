@@ -1,0 +1,272 @@
+// EoX Workflow — normalized roles + teams for future SSO (`externalIdentityId`) and enterprise groups.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleKey {
+  ACCOUNT_TEAM
+  CX_OPS
+  BU_CONTRIBUTOR
+  FINANCE_APPROVER
+  LEADERSHIP_READONLY
+  PLATFORM_ADMIN
+}
+
+enum TeamType {
+  CX_OPERATIONS
+  BU_QUEUE
+  FINANCE
+  LEADERSHIP
+  PLATFORM_ADMIN
+}
+
+enum RequestType {
+  EoVSS
+  EoSM
+  EoSS
+}
+
+enum CaseStatus {
+  Draft
+  Submitted
+  InReview       @map("In Review")
+  AwaitingInfo    @map("Awaiting Info")
+  InProgress      @map("In Progress")
+  Blocked
+  ReadyForRelease @map("Ready for Release")
+  Closed
+  Rejected
+  Cancelled
+}
+
+enum Priority {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum TaskType {
+  IntakeValidation       @map("Intake Validation")
+  BUReview               @map("BU Review")
+  BUPricing              @map("BU Pricing")
+  QuoteTracking          @map("Quote Tracking")
+  VAPTracking            @map("VAP Tracking")
+  FlagRemovalTracking    @map("Flag Removal Tracking")
+  AdditionalInfoRequest  @map("Additional Info Request")
+}
+
+enum TaskStatus {
+  NotStarted   @map("Not Started")
+  InProgress   @map("In Progress")
+  Completed
+  Blocked
+  NotRequired  @map("Not Required")
+}
+
+enum ExternalReferenceType {
+  QUOTE_ID
+  VAP_ID
+  APAS_NPI
+}
+
+model User {
+  id                   String    @id @default(cuid())
+  externalIdentityId   String?   @unique
+  name                 String
+  email                String    @unique
+  passwordHash         String
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  roles          UserRole[]
+  teams          UserTeam[]
+  casesRequested Case[]       @relation("CaseRequester")
+  casesOwned     Case[]       @relation("CaseOwner")
+  tasksOwned     Task[]       @relation("TaskOwner")
+  comments       Comment[]
+  activities     ActivityLog[]
+  attachments    Attachment[]
+}
+
+model Role {
+  id        String     @id @default(cuid())
+  key       RoleKey    @unique
+  name      String
+  userRoles UserRole[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  type         TeamType
+  region       String?
+  businessUnit String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members UserTeam[]
+  cases   Case[]       @relation("CaseTeam")
+  tasks   Task[]       @relation("TaskTeam")
+
+  @@index([type])
+}
+
+model UserTeam {
+  id        String   @id @default(cuid())
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@index([teamId])
+}
+
+model Case {
+  id                    String      @id @default(cuid())
+  caseId                String      @unique
+  requestType           RequestType
+  customerName          String
+  dealId                String
+  platform              String
+  softwareVersion       String
+  status                CaseStatus  @default(Draft)
+  priority              Priority    @default(Medium)
+  requesterId           String
+  ownerId               String?
+  assignedTeamId        String?
+  extensionStartDate    DateTime?
+  extensionEndDate      DateTime?
+  businessJustification String
+  migrationPlan         String?
+  partnerName           String?
+  quantity              Int?
+  eolBulletinLink       String?
+  serialNumbers         String?
+  supportCoverageIndicator String?
+  hwLdosDate            DateTime?
+  notes                 String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  requester    User     @relation("CaseRequester", fields: [requesterId], references: [id])
+  owner        User?    @relation("CaseOwner", fields: [ownerId], references: [id])
+  assignedTeam Team?    @relation("CaseTeam", fields: [assignedTeamId], references: [id])
+
+  tasks       Task[]
+  comments    Comment[]
+  activities  ActivityLog[]
+  attachments Attachment[]
+  references  ExternalReference[]
+
+  @@index([status])
+  @@index([requestType])
+  @@index([assignedTeamId])
+  @@index([ownerId])
+  @@index([requesterId])
+}
+
+model Task {
+  id                String     @id @default(cuid())
+  caseId            String
+  case              Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type              TaskType
+  status            TaskStatus @default(NotStarted)
+  ownerId           String?
+  owner             User?      @relation("TaskOwner", fields: [ownerId], references: [id])
+  assignedTeamId    String?
+  assignedTeam      Team?      @relation("TaskTeam", fields: [assignedTeamId], references: [id])
+  isRequired        Boolean    @default(true)
+  dueDate           DateTime?
+  notes             String?
+  blockerReason     String?
+  notRequiredReason String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  references ExternalReference[]
+
+  @@index([caseId])
+  @@index([assignedTeamId])
+  @@index([ownerId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  caseId       String
+  case         Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fileName     String
+  filePath     String
+  mimeType     String?
+  sizeBytes    Int?
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([caseId])
+}
+
+model ExternalReference {
+  id              String                  @id @default(cuid())
+  caseId          String
+  case            Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  taskId          String?
+  task            Task?                   @relation(fields: [taskId], references: [id])
+  referenceType   ExternalReferenceType
+  referenceId     String
+  externalStatus  String?
+  notes           String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([caseId])
+  @@index([taskId])
+}

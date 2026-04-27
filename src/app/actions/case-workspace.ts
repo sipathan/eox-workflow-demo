@@ -1,0 +1,419 @@
+"use server";
+
+import { randomBytes } from "node:crypto";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import {
+  CaseStatus,
+  RoleKey,
+  TaskStatus,
+} from "@prisma/client";
+import { getSessionUser } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
+import {
+  canUpdateCase,
+  canUpdateTask,
+  canViewCase,
+  hasAnyRole,
+  isReadOnlyDemoUser,
+  type CaseAccessRow,
+  type CaseUpdateRow,
+} from "@/lib/rbac";
+import {
+  addAttachmentMetadataSchema,
+  addCommentSchema,
+  caseAssignmentUpdateSchema,
+  caseStatusUpdateSchema,
+  createTaskSchema,
+  updateTaskSchema,
+  upsertExternalReferenceSchema,
+} from "@/lib/validations/case-workspace";
+
+const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
+  Draft: [CaseStatus.Submitted, CaseStatus.Cancelled],
+  Submitted: [
+    CaseStatus.InReview,
+    CaseStatus.AwaitingInfo,
+    CaseStatus.Blocked,
+    CaseStatus.Rejected,
+    CaseStatus.Cancelled,
+  ],
+  InReview: [
+    CaseStatus.AwaitingInfo,
+    CaseStatus.InProgress,
+    CaseStatus.Blocked,
+    CaseStatus.Rejected,
+    CaseStatus.Cancelled,
+  ],
+  AwaitingInfo: [CaseStatus.InReview, CaseStatus.InProgress, CaseStatus.Blocked, CaseStatus.Cancelled],
+  InProgress: [CaseStatus.Blocked, CaseStatus.ReadyForRelease, CaseStatus.Cancelled],
+  Blocked: [CaseStatus.InProgress, CaseStatus.AwaitingInfo, CaseStatus.Cancelled, CaseStatus.Rejected],
+  ReadyForRelease: [CaseStatus.Closed, CaseStatus.InProgress, CaseStatus.Blocked],
+  Closed: [],
+  Rejected: [],
+  Cancelled: [],
+};
+const REASON_REQUIRED_STATUSES = new Set<CaseStatus>([
+  CaseStatus.Blocked,
+  CaseStatus.Rejected,
+  CaseStatus.Cancelled,
+]);
+const COMPLETION_GATED_STATUSES = new Set<CaseStatus>([
+  CaseStatus.ReadyForRelease,
+  CaseStatus.Closed,
+]);
+
+function toCaseAccessRow(row: {
+  requesterId: string;
+  ownerId: string | null;
+  assignedTeamId: string | null;
+  tasks: { ownerId: string | null; assignedTeamId: string | null }[];
+}): CaseAccessRow {
+  return {
+    requesterId: row.requesterId,
+    ownerId: row.ownerId,
+    assignedTeamId: row.assignedTeamId,
+    taskOwnerIds: row.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
+    taskTeamIds: row.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
+  };
+}
+
+function toCaseUpdateRow(row: {
+  requesterId: string;
+  ownerId: string | null;
+  assignedTeamId: string | null;
+  status: CaseStatus;
+  tasks: { ownerId: string | null; assignedTeamId: string | null }[];
+}): CaseUpdateRow {
+  return { ...toCaseAccessRow(row), status: row.status };
+}
+
+function parseFormData(formData: FormData): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of formData.entries()) {
+    out[k] = String(v);
+  }
+  return out;
+}
+
+function parseDateOrNull(s: string | undefined): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function casePath(caseId: string): string {
+  return `/cases/${caseId}`;
+}
+
+function goCase(caseId: string, message: string, tone: "ok" | "error" = "ok"): never {
+  const qp = new URLSearchParams({ flash: message, tone });
+  redirect(`${casePath(caseId)}?${qp.toString()}`);
+}
+
+async function getCaseOrRedirect(caseId: string) {
+  const user = await getSessionUser();
+  if (!user) goCase(caseId, "Not signed in.", "error");
+  if (isReadOnlyDemoUser(user)) goCase(caseId, "This account is read-only.", "error");
+
+  const row = await prisma.case.findUnique({
+    where: { id: caseId },
+    select: {
+      id: true,
+      caseId: true,
+      status: true,
+      requesterId: true,
+      ownerId: true,
+      assignedTeamId: true,
+      tasks: {
+        select: {
+          id: true,
+          ownerId: true,
+          assignedTeamId: true,
+          type: true,
+          status: true,
+          isRequired: true,
+        },
+      },
+    },
+  });
+  if (!row) goCase(caseId, "Case not found.", "error");
+  if (!canViewCase(user, toCaseAccessRow(row))) goCase(caseId, "You are not allowed to view this case.", "error");
+
+  return { user, row };
+}
+
+async function logActivity(caseId: string, userId: string, action: string, details?: string) {
+  await prisma.activityLog.create({
+    data: { caseId, userId, action, details },
+  });
+}
+
+export async function updateCaseStatusAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = caseStatusUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid status update.", "error");
+  }
+  const { caseId, toStatus, reason } = parsed.data;
+  const { user, row } = await getCaseOrRedirect(caseId);
+
+  const canEditCase = canUpdateCase(user, toCaseUpdateRow(row));
+  const canTransition =
+    canEditCase && (hasAnyRole(user, [RoleKey.CX_OPS]) || user.roles.includes(RoleKey.PLATFORM_ADMIN));
+  if (!canTransition) goCase(caseId, "You are not allowed to update case status.", "error");
+
+  if (!CASE_STATUS_TRANSITIONS[row.status].includes(toStatus)) {
+    goCase(caseId, `Transition ${row.status} → ${toStatus} is not allowed.`, "error");
+  }
+  if (REASON_REQUIRED_STATUSES.has(toStatus) && !reason) {
+    goCase(caseId, `Reason is required when setting ${toStatus}.`, "error");
+  }
+  if (COMPLETION_GATED_STATUSES.has(toStatus)) {
+    const incompleteRequired = row.tasks.some((t) => t.isRequired && t.status !== TaskStatus.Completed);
+    if (incompleteRequired) {
+      goCase(caseId, `${toStatus} requires all required tasks to be completed.`, "error");
+    }
+  }
+
+  await prisma.case.update({
+    where: { id: caseId },
+    data: { status: toStatus },
+  });
+  await logActivity(
+    caseId,
+    user.id,
+    "case_status_changed",
+    `${row.status} → ${toStatus}${reason ? ` | reason: ${reason}` : ""}`
+  );
+
+  revalidatePath(casePath(caseId));
+  revalidatePath("/cases");
+  revalidatePath("/");
+  goCase(caseId, `Status updated to ${toStatus}.`);
+}
+
+export async function updateCaseAssignmentAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = caseAssignmentUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid assignment update.", "error");
+  }
+  const { caseId, ownerId, assignedTeamId, reason } = parsed.data;
+  const { user, row } = await getCaseOrRedirect(caseId);
+  const canManage =
+    canUpdateCase(user, toCaseUpdateRow(row)) &&
+    hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
+  if (!canManage) goCase(caseId, "Only CX Ops/Admin can reassign case owner/team.", "error");
+
+  await prisma.case.update({
+    where: { id: caseId },
+    data: {
+      ownerId: ownerId ?? null,
+      assignedTeamId: assignedTeamId ?? null,
+    },
+  });
+  await logActivity(
+    caseId,
+    user.id,
+    "case_assignment_updated",
+    `owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}${reason ? ` | ${reason}` : ""}`
+  );
+  revalidatePath(casePath(caseId));
+  revalidatePath("/cases");
+  goCase(caseId, "Case assignment updated.");
+}
+
+export async function createTaskAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = createTaskSchema.safeParse(raw);
+  if (!parsed.success) goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid task form.", "error");
+  const { caseId, type, ownerId, assignedTeamId, dueDate, notes } = parsed.data;
+  const { user, row } = await getCaseOrRedirect(caseId);
+  const canManage = hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]) && canUpdateCase(user, toCaseUpdateRow(row));
+  if (!canManage) goCase(caseId, "Only CX Ops/Admin can create tasks.", "error");
+
+  const created = await prisma.task.create({
+    data: {
+      caseId,
+      type,
+      status: TaskStatus.NotStarted,
+      ownerId: ownerId ?? null,
+      assignedTeamId: assignedTeamId ?? null,
+      dueDate: parseDateOrNull(dueDate),
+      notes: notes ?? null,
+      isRequired: true,
+    },
+  });
+  await logActivity(
+    caseId,
+    user.id,
+    "task_created",
+    `${created.type} (${created.id.slice(-6)}) assigned owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}`
+  );
+
+  revalidatePath(casePath(caseId));
+  goCase(caseId, "Task created.");
+}
+
+export async function updateTaskAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = updateTaskSchema.safeParse(raw);
+  if (!parsed.success) goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid task update.", "error");
+  const payload = parsed.data;
+  const { caseId, taskId } = payload;
+  const { user, row } = await getCaseOrRedirect(caseId);
+  const task = row.tasks.find((t) => t.id === taskId);
+  if (!task) goCase(caseId, "Task not found on this case.", "error");
+
+  const canEditTask = canUpdateTask(user, task, toCaseAccessRow(row));
+  if (!canEditTask) goCase(caseId, "You are not allowed to update this task.", "error");
+
+  const canManageAssignments = hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
+  if (payload.status === TaskStatus.Blocked && !payload.blockerReason) {
+    goCase(caseId, "Blocked tasks require blocker reason.", "error");
+  }
+  if ((!payload.isRequired || payload.status === TaskStatus.NotRequired) && !payload.notRequiredReason) {
+    goCase(caseId, "Not Required tasks need a reason.", "error");
+  }
+
+  const status = payload.status;
+  const isRequired = payload.status === TaskStatus.NotRequired ? false : payload.isRequired;
+  if (isRequired && status === TaskStatus.NotRequired) {
+    goCase(caseId, "Not Required status cannot stay marked required.", "error");
+  }
+
+  await prisma.task.update({
+    where: { id: taskId },
+    data: {
+      status,
+      notes: payload.notes ?? null,
+      blockerReason: payload.blockerReason ?? null,
+      notRequiredReason: payload.notRequiredReason ?? null,
+      isRequired,
+      ownerId: canManageAssignments ? payload.ownerId ?? null : task.ownerId,
+      assignedTeamId: canManageAssignments ? payload.assignedTeamId ?? null : task.assignedTeamId,
+      dueDate: canManageAssignments ? parseDateOrNull(payload.dueDate) : undefined,
+    },
+  });
+  await logActivity(
+    caseId,
+    user.id,
+    "task_updated",
+    `${task.type} (${task.id.slice(-6)}) status=${status}${!isRequired ? " not-required" : ""}`
+  );
+
+  revalidatePath(casePath(caseId));
+  goCase(caseId, "Task updated.");
+}
+
+export async function upsertExternalReferenceAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = upsertExternalReferenceSchema.safeParse(raw);
+  if (!parsed.success) goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid external reference.", "error");
+  const payload = parsed.data;
+  const { caseId } = payload;
+  const { user, row } = await getCaseOrRedirect(caseId);
+
+  const caseCanEdit = canUpdateCase(user, toCaseUpdateRow(row));
+  let taskScopedAllowed = false;
+  if (payload.taskId) {
+    const task = row.tasks.find((t) => t.id === payload.taskId);
+    if (!task) goCase(caseId, "Task for reference not found.", "error");
+    taskScopedAllowed = canUpdateTask(user, task, toCaseAccessRow(row));
+  }
+  if (!caseCanEdit && !taskScopedAllowed) {
+    goCase(caseId, "You are not allowed to edit external references.", "error");
+  }
+
+  if (payload.existingReferenceId) {
+    await prisma.externalReference.update({
+      where: { id: payload.existingReferenceId },
+      data: {
+        referenceType: payload.referenceType,
+        referenceId: payload.referenceId,
+        taskId: payload.taskId ?? null,
+        externalStatus: payload.externalStatus ?? null,
+        notes: payload.notes ?? null,
+      },
+    });
+    await logActivity(
+      caseId,
+      user.id,
+      "external_reference_updated",
+      `${payload.referenceType} updated${payload.taskId ? " for task" : ""}`
+    );
+  } else {
+    await prisma.externalReference.create({
+      data: {
+        caseId,
+        referenceType: payload.referenceType,
+        referenceId: payload.referenceId,
+        taskId: payload.taskId ?? null,
+        externalStatus: payload.externalStatus ?? null,
+        notes: payload.notes ?? null,
+      },
+    });
+    await logActivity(
+      caseId,
+      user.id,
+      "external_reference_added",
+      `${payload.referenceType} linked${payload.taskId ? " to task" : ""}`
+    );
+  }
+
+  revalidatePath(casePath(caseId));
+  goCase(caseId, "External reference saved.");
+}
+
+export async function addCommentAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = addCommentSchema.safeParse(raw);
+  if (!parsed.success) goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid comment.", "error");
+  const { caseId, body } = parsed.data;
+  const { user } = await getCaseOrRedirect(caseId);
+  if (!body.trim()) goCase(caseId, "Invalid comment.", "error");
+
+  await prisma.comment.create({
+    data: { caseId, userId: user.id, body: body.trim() },
+  });
+  await logActivity(caseId, user.id, "comment_added", body.trim().slice(0, 120));
+  revalidatePath(casePath(caseId));
+  goCase(caseId, "Comment added.");
+}
+
+export async function addAttachmentMetadataAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = addAttachmentMetadataSchema.safeParse(raw);
+  if (!parsed.success) goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid attachment metadata.", "error");
+  const { caseId, fileName, mimeType, sizeBytes } = parsed.data;
+  const { user, row } = await getCaseOrRedirect(caseId);
+
+  const canEdit =
+    canUpdateCase(user, toCaseUpdateRow(row)) ||
+    hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.BU_CONTRIBUTOR, RoleKey.FINANCE_APPROVER, RoleKey.PLATFORM_ADMIN]);
+  if (!canEdit) goCase(caseId, "You are not allowed to add attachments.", "error");
+
+  const token = randomBytes(4).toString("hex");
+  await prisma.attachment.create({
+    data: {
+      caseId,
+      fileName,
+      filePath: `demo://local/${caseId}/${token}/${encodeURIComponent(fileName)}`,
+      mimeType: mimeType ?? null,
+      sizeBytes: sizeBytes ?? null,
+      uploadedById: user.id,
+    },
+  });
+  await logActivity(caseId, user.id, "attachment_added", `${fileName}${mimeType ? ` (${mimeType})` : ""}`);
+  revalidatePath(casePath(caseId));
+  goCase(caseId, "Attachment metadata added.");
+}
+
