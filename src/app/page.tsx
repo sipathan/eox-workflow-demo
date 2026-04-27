@@ -1,65 +1,113 @@
-import Image from "next/image";
+import Link from "next/link";
+import { demoLoginAction, demoLogoutAction } from "@/app/actions/auth";
+import { getSessionUser } from "@/lib/auth/session";
 
-export default function Home() {
+const DEMO_USERS = [
+  { email: "sales.demo@local", label: "Account team" },
+  { email: "cx.demo@local", label: "CX Ops" },
+  { email: "bu.demo@local", label: "BU contributor" },
+  { email: "finance.demo@local", label: "Finance approver" },
+  { email: "leader.demo@local", label: "Leadership (read-only)" },
+  { email: "admin.demo@local", label: "Platform admin" },
+] as const;
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ login?: string }>;
+}) {
+  const sp = await searchParams;
+  const loginErr = sp.login;
+  const user = await getSessionUser();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="mx-auto flex min-h-full max-w-2xl flex-col gap-8 px-6 py-16">
+      <header className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">EoX Workflow</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Demo workspace</h1>
+        <p className="text-sm leading-relaxed text-slate-600">
+          This is the EoX workflow demo app (not the generic Next.js starter). Pick a seeded demo user below,
+          then open cases and intake. Password for seeded accounts after{" "}
+          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">npm run db:seed</code>:{" "}
+          <strong className="font-medium text-slate-800">Demo123!</strong>
+        </p>
+      </header>
+
+      {loginErr === "invalid" ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+          Unknown or inactive demo email.
+        </p>
+      ) : null}
+      {loginErr === "config" ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Set <code className="font-mono text-xs">SESSION_SECRET</code> in <code className="font-mono text-xs">.env</code>{" "}
+          to at least 32 characters (see <code className="font-mono text-xs">.env.example</code>), then restart{" "}
+          <code className="font-mono text-xs">npm run dev</code>.
+        </p>
+      ) : null}
+
+      {user ? (
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-700">
+            Signed in as <span className="font-medium text-slate-900">{user.name}</span>{" "}
+            <span className="text-slate-500">({user.email})</span>
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/cases"
+              className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              Cases
+            </Link>
+            <Link
+              href="/cases/new"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            >
+              New request
+            </Link>
+            <form action={demoLogoutAction}>
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-900">Demo sign-in</h2>
+          <p className="mt-1 text-xs text-slate-500">HttpOnly session cookie; local demo only.</p>
+          <form action={demoLoginAction} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="block flex-1 text-sm">
+              <span className="text-slate-700">User</span>
+              <select
+                name="email"
+                required
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm"
+                defaultValue="cx.demo@local"
+              >
+                {DEMO_USERS.map((u) => (
+                  <option key={u.email} value={u.email}>
+                    {u.label} — {u.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white hover:bg-sky-800"
+            >
+              Continue
+            </button>
+          </form>
+        </section>
+      )}
+
+      <footer className="text-xs text-slate-500">
+        Port may differ (for example <code className="font-mono">3001</code>); use the URL printed in the terminal.
+      </footer>
     </div>
   );
 }

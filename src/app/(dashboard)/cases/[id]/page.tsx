@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   CaseStatus,
   ExternalReferenceType,
@@ -106,7 +106,7 @@ export default async function CaseDetailPage(props: {
   const { id } = await props.params;
   const flash = parseFlash(await props.searchParams);
   const user = await getSessionUser();
-  if (!user) return <></>;
+  if (!user) redirect("/");
 
   const c = await getCaseByIdForUser(user, id);
   if (!c) notFound();

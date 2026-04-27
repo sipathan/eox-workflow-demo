@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { RoleKey } from "@prisma/client";
 import { getSessionUser } from "@/lib/auth/session";
 import { hasAnyRole, isReadOnlyDemoUser } from "@/lib/rbac";
@@ -14,7 +15,7 @@ export default async function NewCasePage({
   searchParams: Promise<{ draft?: string }>;
 }) {
   const user = await getSessionUser();
-  if (!user) return <></>;
+  if (!user) redirect("/");
 
   const canCreate =
     !isReadOnlyDemoUser(user) &&
