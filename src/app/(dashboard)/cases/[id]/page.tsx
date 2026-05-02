@@ -24,7 +24,6 @@ import {
   upsertExternalReferenceAction,
 } from "@/app/actions/case-workspace";
 import { BookingOutcomeForm } from "@/components/case/BookingOutcomeForm";
-import { CaseFinancialSummary } from "@/components/case/CaseFinancialSummary";
 import { PlatformAssetCostEditor } from "@/components/case/PlatformAssetCostEditor";
 import { TaskRowForm } from "@/components/case/TaskRowForm";
 import { Badge } from "@/components/ui/Badge";
@@ -40,7 +39,7 @@ import {
   type CaseAccessRow,
   type TaskAccessRow,
 } from "@/lib/rbac";
-import { rollupCaseFinancials } from "@/lib/cases/financials";
+import { rollupCaseFinancials, totalQuantityFromAssets } from "@/lib/cases/financials";
 import {
   formatCaseStatus,
   formatEssMssSupportSubtype,
@@ -48,6 +47,7 @@ import {
   formatRequestType,
   formatTaskStatus,
   formatTaskType,
+  formatUsd2,
 } from "@/lib/ui/format";
 import { daysActiveDisplay, sortCaseTasksForDisplay, taskWorkItemLabel } from "@/lib/workflow/task-display";
 import {
@@ -106,6 +106,18 @@ function quoteBookingNeedsReason(status: QuoteBookingStatus): boolean {
   return status === QuoteBookingStatus.NOT_BOOKED || status === QuoteBookingStatus.PASSED_OVER;
 }
 
+/** Booking/commercial line is considered finalized for summary UX when outcome is set or case is terminal. */
+function isBookingCommercialFinalized(caseStatus: CaseStatus, quoteBookingStatus: QuoteBookingStatus): boolean {
+  if (
+    caseStatus === CaseStatus.Closed ||
+    caseStatus === CaseStatus.Rejected ||
+    caseStatus === CaseStatus.Cancelled
+  ) {
+    return true;
+  }
+  return quoteBookingStatus !== QuoteBookingStatus.OPEN;
+}
+
 function toCaseAccessRow(c: {
   requesterId: string;
   ownerId: string | null;
@@ -135,15 +147,17 @@ export default async function CaseDetailPage(props: {
   const sortedTasks = sortCaseTasksForDisplay(c.tasks);
   const readonly = isReadOnlyDemoUser(user);
   const caseAccess = toCaseAccessRow(c);
-  const canManageCaseStatus =
+  /** CX/Platform: case status, queue/Deal ID/routing note, task assignment pickers, Add task (matches server gates). */
+  const canManageCaseOps =
     !readonly &&
     canUpdateCase(user, { ...caseAccess, status: c.status }) &&
     hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
-  const canManageTasks = !readonly && hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
+  const dealIdTrimmed = (c.dealId ?? "").trim();
   const canEditCaseFinancials = !readonly && canUpdateCase(user, { ...caseAccess, status: c.status });
   const financialRollup = rollupCaseFinancials(
     c.assets.map((a) => ({ buCost: a.buCost, cxCost: a.cxCost }))
   );
+  const totalUnitsQty = totalQuantityFromAssets(c.assets);
   const canAddComment = !readonly;
   const canAddAttachment = !readonly;
   const canEditReferences = !readonly;
@@ -195,234 +209,410 @@ export default async function CaseDetailPage(props: {
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
-          <h2 className="text-sm font-semibold text-slate-800">Case summary</h2>
-          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800">Case summary</h2>
+        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Case ID</dt>
+            <dd className="font-mono text-slate-900">{c.caseId}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Service</dt>
+            <dd className="text-slate-900">{formatRequestType(c.requestType)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Customer</dt>
+            <dd className="text-slate-900">{c.customerName}</dd>
+          </div>
+          {dealIdTrimmed ? (
             <div>
-              <dt className="text-xs uppercase text-slate-500">Case ID</dt>
-              <dd className="font-mono text-slate-900">{c.caseId}</dd>
+              <dt className="text-xs uppercase text-slate-500">Deal ID</dt>
+              <dd className="font-mono text-slate-900">{dealIdTrimmed}</dd>
             </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Service</dt>
-              <dd className="text-slate-900">{formatRequestType(c.requestType)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Customer</dt>
-              <dd className="text-slate-900">{c.customerName}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Status</dt>
-              <dd>
-                <StatusBadge status={c.status} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Priority</dt>
-              <dd>
-                <PriorityBadge priority={c.priority} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Requester</dt>
-              <dd className="text-slate-900">{c.requester.name}</dd>
-            </div>
-            <div className="sm:col-span-2 rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs text-slate-600">
-              Case owner and queue are managed under <strong className="text-slate-800">Routing / assignment</strong> below
-              (separate from workflow tasks).
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-xs uppercase text-slate-500">Business justification</dt>
-              <dd className="text-slate-800">{c.businessJustification}</dd>
-            </div>
-            {c.requestType === RequestType.ESS_MSS ? (
-              <div className="sm:col-span-2 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/35 p-4 shadow-sm">
-                <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-emerald-100 pb-2">
-                  <h3 className="text-sm font-semibold text-emerald-950">ESS/MSS</h3>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">
-                    {formatEssMssSupportSubtype(c.essSupportSubtype)}
-                  </span>
-                </div>
+          ) : null}
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Priority</dt>
+            <dd>
+              <PriorityBadge priority={c.priority} />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Requester</dt>
+            <dd className="text-slate-900">{c.requester.name}</dd>
+          </div>
+        </dl>
 
+        <div className="mt-5 space-y-4 border-t border-slate-200 pt-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Business justification</p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-800">{c.businessJustification}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Migration plan</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+              {c.migrationPlan?.trim() ? c.migrationPlan : "—"}
+            </p>
+            {c.requestType === RequestType.ESS_MSS ? (
+              <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
+                Required narrative for ESS/MSS on submit; optional supporting text for other services (same field).
+              </p>
+            ) : null}
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Extension window</p>
+            <p className="mt-1 text-sm text-slate-900">
+              {c.extensionStartDate && c.extensionEndDate
+                ? `${c.extensionStartDate.toLocaleDateString()} → ${c.extensionEndDate.toLocaleDateString()}`
+                : "—"}
+            </p>
+          </div>
+
+          {c.requestType === RequestType.ESS_MSS ? (
+            <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/35 p-4 shadow-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-emerald-100 pb-2">
+                <h3 className="text-sm font-semibold text-emerald-950">ESS/MSS</h3>
+                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">
+                  {formatEssMssSupportSubtype(c.essSupportSubtype)}
+                </span>
+              </div>
+
+              {(c.migrationTimeline?.trim() || c.targetReplacementProduct?.trim()) && (
                 <section className="rounded-lg border border-white/80 bg-white/90 p-3 shadow-sm">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Migration plan</h4>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
-                    {c.migrationPlan?.trim() ? c.migrationPlan : "—"}
-                  </p>
                   {c.migrationTimeline?.trim() ? (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
+                    <div>
                       <p className="text-xs font-semibold uppercase text-slate-500">Timeline</p>
                       <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{c.migrationTimeline}</p>
                     </div>
                   ) : null}
                   {c.targetReplacementProduct?.trim() ? (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
+                    <div className={c.migrationTimeline?.trim() ? "mt-3 border-t border-slate-100 pt-3" : ""}>
                       <p className="text-xs font-semibold uppercase text-slate-500">Target replacement</p>
                       <p className="mt-1 text-sm text-slate-800">{c.targetReplacementProduct}</p>
                     </div>
                   ) : null}
                 </section>
+              )}
 
-                {(c.essSupportSubtype === EssMssSupportSubtype.HARDWARE ||
-                  c.essSupportSubtype === EssMssSupportSubtype.HARDWARE_AND_SOFTWARE) && (
-                  <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Hardware location</h4>
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
-                      {c.hardwarePhysicalLocation?.trim() ? c.hardwarePhysicalLocation : "—"}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Serial numbers and platforms are listed under <strong className="text-slate-700">Platforms &amp; equipment</strong>.
-                    </p>
-                  </section>
-                )}
+              {(c.essSupportSubtype === EssMssSupportSubtype.HARDWARE ||
+                c.essSupportSubtype === EssMssSupportSubtype.HARDWARE_AND_SOFTWARE) && (
+                <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Hardware location</h4>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
+                    {c.hardwarePhysicalLocation?.trim() ? c.hardwarePhysicalLocation : "—"}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Serial numbers and platforms are listed under <strong className="text-slate-700">Platforms &amp; equipment</strong>.
+                  </p>
+                </section>
+              )}
 
-                {(c.essSupportSubtype === EssMssSupportSubtype.SOFTWARE ||
-                  c.essSupportSubtype === EssMssSupportSubtype.HARDWARE_AND_SOFTWARE) && (
-                  <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm space-y-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Software &amp; deployment</h4>
-                    <dl className="grid gap-2 text-sm sm:grid-cols-2">
-                      <div className="sm:col-span-2">
-                        <dt className="text-xs uppercase text-slate-500">Deployment type</dt>
-                        <dd className="text-slate-800">{c.softwareDeploymentType?.trim() || "—"}</dd>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <dt className="text-xs uppercase text-slate-500">Product family / type</dt>
-                        <dd className="text-slate-800">{c.softwareProductFamily?.trim() || "—"}</dd>
-                      </div>
-                    </dl>
-                    <div className="rounded-md border border-slate-100 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
-                      <span className="font-semibold text-slate-800">Eligibility signals: </span>
-                      On‑prem {c.softwareOnPremise === true ? "yes" : c.softwareOnPremise === false ? "no" : "—"} ·
-                      Perpetual {c.softwarePerpetualLicense === true ? "yes" : c.softwarePerpetualLicense === false ? "no" : "—"} ·
-                      Application software{" "}
-                      {c.softwareIsApplicationSoftware === true ? "yes" : c.softwareIsApplicationSoftware === false ? "no" : "—"} ·
-                      Not IOS/IOS‑XR {c.softwareNotIosIosXr === true ? "yes" : c.softwareNotIosIosXr === false ? "no" : "—"} ·
-                      Environment{" "}
-                      {c.environmentIsProduction === true
-                        ? "production"
-                        : c.environmentIsProduction === false
-                          ? "lab / non‑production"
-                          : "—"}
+              {(c.essSupportSubtype === EssMssSupportSubtype.SOFTWARE ||
+                c.essSupportSubtype === EssMssSupportSubtype.HARDWARE_AND_SOFTWARE) && (
+                <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm space-y-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Software &amp; deployment</h4>
+                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs uppercase text-slate-500">Deployment type</dt>
+                      <dd className="text-slate-800">{c.softwareDeploymentType?.trim() || "—"}</dd>
                     </div>
-                    {(c.environmentIsProduction === false ||
-                      c.softwareOnPremise === false ||
-                      c.softwarePerpetualLicense === false ||
-                      c.softwareIsApplicationSoftware === false ||
-                      c.softwareNotIosIosXr === false) && (
-                      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                        Review suggested: non‑production or declaration mismatch. Intake acknowledgement:{" "}
-                        <strong>{c.essEligibilityAcknowledged ? "Yes" : "No"}</strong>.
-                      </div>
-                    )}
-                  </section>
-                )}
-              </div>
-            ) : c.migrationPlan?.trim() ? (
-              <div className="sm:col-span-2">
-                <dt className="text-xs uppercase text-slate-500">Supporting details</dt>
-                <dd className="whitespace-pre-wrap text-slate-800">{c.migrationPlan}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Extension window</dt>
-              <dd className="text-slate-900">
-                {c.extensionStartDate && c.extensionEndDate
-                  ? `${c.extensionStartDate.toLocaleDateString()} → ${c.extensionEndDate.toLocaleDateString()}`
-                  : "—"}
-              </dd>
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs uppercase text-slate-500">Product family / type</dt>
+                      <dd className="text-slate-800">{c.softwareProductFamily?.trim() || "—"}</dd>
+                    </div>
+                  </dl>
+                  <div className="rounded-md border border-slate-100 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
+                    <span className="font-semibold text-slate-800">Eligibility signals: </span>
+                    On‑prem {c.softwareOnPremise === true ? "yes" : c.softwareOnPremise === false ? "no" : "—"} ·
+                    Perpetual {c.softwarePerpetualLicense === true ? "yes" : c.softwarePerpetualLicense === false ? "no" : "—"} ·
+                    Application software{" "}
+                    {c.softwareIsApplicationSoftware === true ? "yes" : c.softwareIsApplicationSoftware === false ? "no" : "—"} ·
+                    Not IOS/IOS‑XR {c.softwareNotIosIosXr === true ? "yes" : c.softwareNotIosIosXr === false ? "no" : "—"} ·
+                    Environment{" "}
+                    {c.environmentIsProduction === true
+                      ? "production"
+                      : c.environmentIsProduction === false
+                        ? "lab / non‑production"
+                        : "—"}
+                  </div>
+                  {(c.environmentIsProduction === false ||
+                    c.softwareOnPremise === false ||
+                    c.softwarePerpetualLicense === false ||
+                    c.softwareIsApplicationSoftware === false ||
+                    c.softwareNotIosIosXr === false) && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      Review suggested: non‑production or declaration mismatch. Intake acknowledgement:{" "}
+                      <strong>{c.essEligibilityAcknowledged ? "Yes" : "No"}</strong>.
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
-            {c.partnerName?.trim() || c.quantity != null ? (
-              <div className="sm:col-span-2 rounded-md border border-slate-100 bg-slate-50/50 px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Partner &amp; volume <span className="font-normal normal-case text-slate-500">(optional)</span>
+          ) : null}
+        </div>
+
+        <div className="mt-5 border-t border-slate-200 pt-5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Case totals</h3>
+              {isBookingCommercialFinalized(c.status, c.quoteBookingStatus) ? (
+                <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900">
+                  Booking: {formatQuoteBookingStatus(c.quoteBookingStatus)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-950">
+                  Booking not updated
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-slate-500">
+              Rolled up from all platform lines (same math as <strong className="text-slate-700">Platform financials</strong>{" "}
+              below). Per-platform BU/CX are edited there.
+            </p>
+            <dl className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-md border border-white/90 bg-white px-2.5 py-2 shadow-sm">
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Total BU cost</dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
+                  {formatUsd2(financialRollup.totalBuCost)}
+                </dd>
+              </div>
+              <div className="rounded-md border border-white/90 bg-white px-2.5 py-2 shadow-sm">
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Total CX cost</dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
+                  {formatUsd2(financialRollup.totalCxCost)}
+                </dd>
+              </div>
+              <div className="rounded-md border border-emerald-200/60 bg-emerald-50/50 px-2.5 py-2 shadow-sm sm:col-span-1">
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-emerald-900/80">Total quote value</dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-emerald-950">
+                  {formatUsd2(financialRollup.totalQuoteValue)}
+                </dd>
+              </div>
+              <div className="rounded-md border border-slate-200/80 bg-white px-2.5 py-2 shadow-sm sm:col-span-3">
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Total units (qty)</dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
+                  {totalUnitsQty != null ? totalUnitsQty : "—"}
+                </dd>
+                <p className="mt-1 text-[10px] leading-snug text-slate-500">
+                  Sum of per-platform quantities when set (see <strong className="font-medium text-slate-700">Platforms &amp; equipment</strong>).
                 </p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {c.partnerName?.trim() ? (
-                    <div>
-                      <div className="text-xs uppercase text-slate-500">Partner</div>
-                      <div className="text-slate-900">{c.partnerName.trim()}</div>
-                    </div>
-                  ) : null}
-                  {c.quantity != null ? (
-                    <div>
-                      <div className="text-xs uppercase text-slate-500">Quantity</div>
-                      <div className="text-slate-900">{c.quantity}</div>
-                    </div>
-                  ) : null}
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3 border-t border-slate-100 pt-5 text-sm">
+          <div className="rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs text-slate-600">
+            Case owner, team queue, Deal ID, and optional routing note are edited in{" "}
+            <strong className="text-slate-800">Operations &amp; assignment</strong> (alongside this summary on large
+            screens; stacked on small screens). Separate from workflow tasks.
+          </div>
+          {c.partnerName?.trim() ? (
+            <div className="rounded-md border border-slate-100 bg-slate-50/50 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Partner <span className="font-normal normal-case text-slate-500">(optional)</span>
+              </p>
+              <div className="mt-2">
+                <div className="text-xs uppercase text-slate-500">Name</div>
+                <div className="text-slate-900">{c.partnerName.trim()}</div>
+              </div>
+            </div>
+          ) : null}
+          {c.supportCoverageIndicator ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coverage indicator</p>
+              <p className="mt-1 text-slate-900">{c.supportCoverageIndicator}</p>
+            </div>
+          ) : null}
+          {c.notes ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</p>
+              <p className="mt-1 whitespace-pre-wrap text-slate-800">{c.notes}</p>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 p-5 shadow-sm ring-1 ring-slate-900/[0.04]">
+        <h2 className="text-sm font-semibold text-slate-900">Operations &amp; assignment</h2>
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-600">
+          <strong>Assignment</strong> sets the case owner, team queue, Deal ID, and optional routing note on the case
+          record. It does not replace individual <strong>workflow tasks</strong> (BU review, eligibility, quotes, etc.)
+          in the section below.
+        </p>
+        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Created</dt>
+            <dd className="text-slate-900">{c.createdAt.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Last updated</dt>
+            <dd className="text-slate-900">{c.updatedAt.toLocaleString()}</dd>
+          </div>
+          <div className="min-w-0 sm:col-span-2">
+            <dt className="text-xs uppercase text-slate-500">Requester email</dt>
+            <dd className="truncate text-slate-800" title={c.requester.email}>
+              {c.requester.email}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Deal ID</dt>
+            <dd className="font-mono text-slate-900">{dealIdTrimmed || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Current owner</dt>
+            <dd className="text-slate-900">{ownershipDisplayForCase(c)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase text-slate-500">Assigned team</dt>
+            <dd className="text-slate-900">{assignedTeamFallbackLabelForCase(c)}</dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-xs uppercase text-slate-500">Routing note</dt>
+            <dd className="whitespace-pre-wrap text-slate-800">
+              {(c.routingNote ?? "").trim() || "—"}
+            </dd>
+          </div>
+        </dl>
+
+        {canManageCaseOps ? (
+          <div className="mt-5 space-y-4">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Case actions</h3>
+              <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+                  <form action={updateCaseStatusAction} className="space-y-2">
+                    <p className="text-xs font-medium text-slate-700">Case status</p>
+                    <input type="hidden" name="caseId" value={c.id} />
+                    <label className="block text-xs text-slate-600">
+                      Next status
+                      <select
+                        name="toStatus"
+                        defaultValue={c.status}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        {CASE_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {formatCaseStatus(s)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs text-slate-600">
+                      Status change note{" "}
+                      <span className="font-normal text-slate-500">(required for Blocked, Rejected, or Cancelled)</span>
+                      <textarea
+                        name="reason"
+                        rows={2}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                    >
+                      Update case status
+                    </button>
+                  </form>
+                </div>
+
+                <div className="rounded-md border border-indigo-100 bg-white p-3 shadow-sm">
+                  <form
+                    key={`assign-${c.id}-${dealIdTrimmed}-${c.ownerId ?? ""}-${c.assignedTeamId ?? ""}-${(c.routingNote ?? "").slice(0, 24)}`}
+                    action={updateCaseAssignmentAction}
+                    className="space-y-2"
+                  >
+                    <p className="text-xs font-medium text-slate-700">Queue, Deal ID &amp; routing note</p>
+                    <input type="hidden" name="caseId" value={c.id} />
+                    <label className="block text-xs text-slate-600">
+                      Deal ID <span className="font-normal text-slate-500">(optional)</span>
+                      <input
+                        name="dealId"
+                        defaultValue={c.dealId ?? ""}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm"
+                        placeholder="Leave blank if not known yet"
+                      />
+                    </label>
+                    <label className="block text-xs text-slate-600">
+                      Owner
+                      <select
+                        name="ownerId"
+                        defaultValue={c.ownerId ?? ""}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Unowned</option>
+                        {users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs text-slate-600">
+                      Assigned team / queue
+                      <select
+                        name="assignedTeamId"
+                        defaultValue={c.assignedTeamId ?? ""}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Unassigned queue</option>
+                        {teams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs text-slate-600">
+                      Routing note <span className="font-normal text-slate-500">(optional)</span>
+                      <textarea
+                        name="routingNote"
+                        rows={2}
+                        defaultValue={c.routingNote ?? ""}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        placeholder="Queue balancing, handoff context, or escalation notes…"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Save queue &amp; Deal ID
+                    </button>
+                  </form>
                 </div>
               </div>
-            ) : null}
-            {c.supportCoverageIndicator ? (
-              <div>
-                <dt className="text-xs uppercase text-slate-500">Coverage indicator</dt>
-                <dd className="text-slate-900">{c.supportCoverageIndicator}</dd>
-              </div>
-            ) : null}
-            {c.notes ? (
-              <div className="sm:col-span-2">
-                <dt className="text-xs uppercase text-slate-500">Notes</dt>
-                <dd className="whitespace-pre-wrap text-slate-800">{c.notes}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </section>
+            </div>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-800">Case metadata</h2>
-          <dl className="mt-3 grid gap-3 text-sm">
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Created</dt>
-              <dd className="text-slate-900">{c.createdAt.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Last updated</dt>
-              <dd className="text-slate-900">{c.updatedAt.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Requester email</dt>
-              <dd className="text-slate-700">{c.requester.email}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase text-slate-500">Current status</dt>
-              <dd>
-                <StatusBadge status={c.status} />
-              </dd>
-            </div>
-          </dl>
-          {canManageCaseStatus ? (
-            <form action={updateCaseStatusAction} className="mt-4 space-y-2 rounded-md border border-slate-200 p-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Case actions</h3>
-              <input type="hidden" name="caseId" value={c.id} />
-              <label className="block text-xs text-slate-600">
-                Next status
-                <select name="toStatus" defaultValue={c.status} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-                  {CASE_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {formatCaseStatus(s)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs text-slate-600">
-                Reason (required for Blocked / Rejected / Cancelled)
-                <textarea name="reason" rows={2} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
-              </label>
-              <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800">
-                Update case status
-              </button>
-            </form>
-          ) : (
-            <p className="mt-4 text-xs text-slate-500">Case status updates are restricted to CX Ops / Platform Admin.</p>
-          )}
-        </section>
+            {c.tasks.some((t) => t.type === TaskType.AdditionalInfoRequest && !t.isRunnable) ? (
+              <form action={activateAdditionalInfoTaskAction} className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
+                <input type="hidden" name="caseId" value={c.id} />
+                <p className="text-xs text-amber-900">
+                  <strong>Additional Info Request</strong> is on the case but inactive until you need it.
+                </p>
+                <button
+                  type="submit"
+                  className="mt-2 rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
+                >
+                  Activate Additional Info task
+                </button>
+              </form>
+            ) : null}
+          </div>
+        ) : (
+          <p className="mt-4 text-xs text-slate-500">
+            Operations on this panel are restricted to CX Operations or Platform Admin.
+          </p>
+        )}
+      </section>
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/[0.04]">
         <h2 className="text-sm font-semibold text-slate-900">Platforms &amp; equipment</h2>
         <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-600">
-          Technical line items from intake. BU Review and BU Pricing tasks in the workflow section below are opened per
-          row when the case is submitted. Financials for each platform are managed separately in{" "}
-          <strong>Platform financials</strong>.
+          Technical line items from intake. BU Review and BU Pricing tasks appear in <strong>Workflow / tasks</strong>{" "}
+          below (opened per row when the case is submitted). Per-platform BU/CX costs are edited in{" "}
+          <strong>Platform financials</strong> after that section.
         </p>
         {c.assets.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">No platform rows recorded for this case.</p>
@@ -434,6 +624,7 @@ export default async function CaseDetailPage(props: {
                   <th className="px-2.5 py-2 font-medium">#</th>
                   <th className="px-2.5 py-2 font-medium">Platform</th>
                   <th className="px-2.5 py-2 font-medium">Software</th>
+                  <th className="px-2.5 py-2 font-medium text-right">Quantity</th>
                   <th className="px-2.5 py-2 font-medium">Serial numbers</th>
                   <th className="px-2.5 py-2 font-medium">EoL bulletin</th>
                   <th className="px-2.5 py-2 font-medium">HW LDOS</th>
@@ -445,6 +636,9 @@ export default async function CaseDetailPage(props: {
                     <td className="px-2.5 py-2 tabular-nums text-slate-500">{i + 1}</td>
                     <td className="px-2.5 py-2 font-medium text-slate-900">{a.platformName}</td>
                     <td className="px-2.5 py-2 text-slate-700">{a.softwareVersion ?? "—"}</td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums text-slate-700">
+                      {a.quantity != null ? a.quantity : "—"}
+                    </td>
                     <td className="max-w-[14rem] px-2.5 py-2 whitespace-pre-wrap text-slate-700">{a.serialNumbers ?? "—"}</td>
                     <td className="max-w-[10rem] px-2.5 py-2 break-all text-sky-800">
                       {a.eolBulletinLink && /^https?:\/\//i.test(a.eolBulletinLink) ? (
@@ -466,176 +660,14 @@ export default async function CaseDetailPage(props: {
         )}
       </section>
 
-      {c.assets.length > 0 ? (
-        <CaseFinancialSummary
-          assetCount={c.assets.length}
-          totalBuCost={financialRollup.totalBuCost}
-          totalCxCost={financialRollup.totalCxCost}
-          totalQuoteValue={financialRollup.totalQuoteValue}
-        />
-      ) : null}
-
-      {c.assets.length > 0 ? (
-        <section className="rounded-xl border border-slate-300/80 bg-slate-50/50 p-5 shadow-sm ring-1 ring-slate-900/[0.03]">
-          <h2 className="text-sm font-semibold text-slate-900">Platform financials</h2>
-          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-600">
-            Per-platform BU and CX (demo USD). Line total updates live while you edit. Use{" "}
-            <strong>Case financial summary</strong> above for rolled-up totals across all lines.
-          </p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {c.assets.map((a) => (
-              <PlatformAssetCostEditor
-                key={`${a.id}-${a.buCost}-${a.cxCost}`}
-                caseId={c.id}
-                assetId={a.id}
-                platformLabel={a.platformName}
-                initialBuCost={a.buCost}
-                initialCxCost={a.cxCost}
-                canEdit={canEditCaseFinancials}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="rounded-xl border border-violet-200/80 bg-violet-50/30 p-5 shadow-sm ring-1 ring-violet-900/[0.04]">
-        <h2 className="text-sm font-semibold text-slate-900">Booking outcome</h2>
-        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-600">
-          Commercial result for this case (separate from workflow tasks and routing). Reason is shown only when the
-          booking status is Not booked or Passed over.
-        </p>
-        <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
-          <div className="rounded-md border border-white/60 bg-white/80 px-3 py-2 shadow-sm">
-            <dt className="font-medium text-slate-500">Quote booking status</dt>
-            <dd className="mt-0.5 text-sm font-medium text-slate-900">{formatQuoteBookingStatus(c.quoteBookingStatus)}</dd>
-          </div>
-          {quoteBookingNeedsReason(c.quoteBookingStatus) ? (
-            <div className="rounded-md border border-white/60 bg-white/80 px-3 py-2 shadow-sm sm:col-span-1">
-              <dt className="font-medium text-slate-500">Not booked reason</dt>
-              <dd className="mt-0.5 text-sm leading-snug text-slate-800">
-                {c.notBookedReason?.trim() ? c.notBookedReason : "— (no reason recorded)"}
-              </dd>
-            </div>
-          ) : null}
-        </dl>
-        {canEditCaseFinancials ? (
-          <BookingOutcomeForm
-            key={`booking-${c.quoteBookingStatus}-${c.notBookedReason ?? ""}`}
-            caseId={c.id}
-            defaultStatus={c.quoteBookingStatus}
-            defaultReason={c.notBookedReason}
-          />
-        ) : (
-          <p className="mt-4 text-xs text-slate-500">
-            Read-only for this account. Booking updates use the same permissions as other case edits (e.g. CX Operations
-            or Platform Admin).
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Routing / assignment</h2>
-        <p className="mt-1 max-w-3xl text-xs text-slate-600">
-          <strong>Routing</strong> controls who owns the case on the CX queue and which team inbox it sits in. It does
-          not replace individual <strong>workflow tasks</strong> (BU review, eligibility review, quotes, etc.). CX Operations or Platform
-          Admin can set or update the optional Deal ID here after intake.
-        </p>
-        <dl className="mt-3 grid gap-2 rounded-md border border-indigo-100/80 bg-white/80 px-3 py-2 text-xs sm:grid-cols-3">
-          <div>
-            <dt className="font-medium text-slate-500">Current owner</dt>
-            <dd className="text-slate-900">{ownershipDisplayForCase(c)}</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-500">Current queue</dt>
-            <dd className="text-slate-900">{assignedTeamFallbackLabelForCase(c)}</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-500">Deal ID</dt>
-            <dd className="font-mono text-slate-900">{c.dealId ?? "—"}</dd>
-          </div>
-        </dl>
-        {canManageTasks ? (
-          <div className="mt-3 space-y-3">
-            <form action={updateCaseAssignmentAction} className="space-y-2 rounded-md border border-indigo-100 bg-white p-3 shadow-sm">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Case queue &amp; Deal ID</h3>
-              <input type="hidden" name="caseId" value={c.id} />
-              <label className="block text-xs text-slate-600">
-                Deal ID (optional)
-                <input
-                  name="dealId"
-                  defaultValue={c.dealId ?? ""}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm"
-                  placeholder="Leave blank if not known yet"
-                />
-              </label>
-              <label className="block text-xs text-slate-600">
-                Owner
-                <select
-                  name="ownerId"
-                  defaultValue={c.ownerId ?? ""}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-                >
-                  <option value="">Unowned</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs text-slate-600">
-                Assigned team / queue
-                <select
-                  name="assignedTeamId"
-                  defaultValue={c.assignedTeamId ?? ""}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-                >
-                  <option value="">Unassigned queue</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs text-slate-600">
-                Reason (optional)
-                <input
-                  name="reason"
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-                  placeholder="Queue balancing, handoff, escalation..."
-                />
-              </label>
-              <button type="submit" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                Save routing
-              </button>
-            </form>
-            {c.tasks.some((t) => t.type === TaskType.AdditionalInfoRequest && !t.isRunnable) ? (
-              <form action={activateAdditionalInfoTaskAction} className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
-                <input type="hidden" name="caseId" value={c.id} />
-                <p className="text-xs text-amber-900">
-                  <strong>Additional Info Request</strong> is on the case but inactive until you need it.
-                </p>
-                <button
-                  type="submit"
-                  className="mt-2 rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
-                >
-                  Activate Additional Info task
-                </button>
-              </form>
-            ) : null}
-          </div>
-        ) : (
-          <p className="mt-3 text-xs text-slate-500">Routing changes are restricted to CX Ops / Platform Admin.</p>
-        )}
-      </section>
-
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">Workflow / tasks</h2>
         <p className="mt-1 max-w-3xl text-xs text-slate-600">
           Work items and progress for this case (BU Review / BU Pricing are listed once per platform). Task assignment
-          here is separate from <strong>case routing</strong> above. Inactive tasks show <strong>Not active</strong> in
-          # Days active until upstream work completes.
+          here is separate from <strong>Operations &amp; assignment</strong> at the top of this page. Inactive tasks show{" "}
+          <strong>Not active</strong> in # Days active until upstream work completes.{" "}
+          <strong>Platform financials</strong> (per line) follow, then <strong>Booking outcome</strong>. Case-level
+          financial roll-up is in <strong>Case summary</strong>.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -712,7 +744,7 @@ export default async function CaseDetailPage(props: {
                           defaultBlockerReason={t.blockerReason}
                           defaultNotRequiredReason={t.notRequiredReason}
                           canEditTask={canEditTask}
-                          canManageAssignments={canManageTasks}
+                          canManageAssignments={canManageCaseOps}
                           users={users}
                           teams={teams}
                           defaultOwnerId={t.ownerId}
@@ -748,7 +780,7 @@ export default async function CaseDetailPage(props: {
             </tbody>
           </table>
         </div>
-        {canManageTasks ? (
+        {canManageCaseOps ? (
           <form action={createTaskAction} className="mt-4 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
             <input type="hidden" name="caseId" value={c.id} />
             <select name="type" defaultValue={TaskType.BUReview} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
@@ -785,6 +817,64 @@ export default async function CaseDetailPage(props: {
             </button>
           </form>
         ) : null}
+      </section>
+
+      {c.assets.length > 0 ? (
+        <section className="rounded-xl border border-slate-300/80 bg-slate-50/50 p-5 shadow-sm ring-1 ring-slate-900/[0.03]">
+          <h2 className="text-sm font-semibold text-slate-900">Platform financials</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-600">
+            Per-platform BU and CX (demo USD). Line total updates live while you edit. Rolled-up totals for the whole
+            case are shown in <strong>Case summary</strong>.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {c.assets.map((a) => (
+              <PlatformAssetCostEditor
+                key={`${a.id}-${a.buCost}-${a.cxCost}`}
+                caseId={c.id}
+                assetId={a.id}
+                platformLabel={a.platformName}
+                initialBuCost={a.buCost}
+                initialCxCost={a.cxCost}
+                canEdit={canEditCaseFinancials}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="rounded-xl border border-violet-200/80 bg-violet-50/30 p-5 shadow-sm ring-1 ring-violet-900/[0.04]">
+        <h2 className="text-sm font-semibold text-slate-900">Booking outcome</h2>
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-600">
+          Commercial result for this case (after workflow and platform financials above; separate from the Operations &
+          assignment panel). Reason is shown only when the booking status is Not booked or Passed over.
+        </p>
+        <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
+          <div className="rounded-md border border-white/60 bg-white/80 px-3 py-2 shadow-sm">
+            <dt className="font-medium text-slate-500">Quote booking status</dt>
+            <dd className="mt-0.5 text-sm font-medium text-slate-900">{formatQuoteBookingStatus(c.quoteBookingStatus)}</dd>
+          </div>
+          {quoteBookingNeedsReason(c.quoteBookingStatus) ? (
+            <div className="rounded-md border border-white/60 bg-white/80 px-3 py-2 shadow-sm sm:col-span-1">
+              <dt className="font-medium text-slate-500">Not booked reason</dt>
+              <dd className="mt-0.5 text-sm leading-snug text-slate-800">
+                {c.notBookedReason?.trim() ? c.notBookedReason : "— (no reason recorded)"}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+        {canEditCaseFinancials ? (
+          <BookingOutcomeForm
+            key={`booking-${c.quoteBookingStatus}-${c.notBookedReason ?? ""}`}
+            caseId={c.id}
+            defaultStatus={c.quoteBookingStatus}
+            defaultReason={c.notBookedReason}
+          />
+        ) : (
+          <p className="mt-4 text-xs text-slate-500">
+            Read-only for this account. Booking updates use the same permissions as other case edits (e.g. CX Operations
+            or Platform Admin).
+          </p>
+        )}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

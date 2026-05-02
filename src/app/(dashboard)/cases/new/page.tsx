@@ -26,7 +26,7 @@ export default async function NewCasePage({
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
       <PageHeader
         title="Create request"
-        description="Multi-step intake for EoVSS, EoSM (End of Software Maintenance), and ESS/MSS. Partner and quantity are optional. Deal ID is optional—CX Operations or your partner administrator can add it later on the case. Add one card per platform; save drafts anytime. Submit validates the full intake, assigns a public case ID from the selected service (EoVSS-, EoSM-, or ESSMSS- prefix), creates platform records, and opens the default task set (Intake Validation starts active immediately)."
+        description="Multi-step intake for EoVSS, EoSM (End of Software Maintenance), and ESS/MSS. Partner name is optional; optional quantity is captured per platform card. Deal ID is optional—CX Operations or your partner administrator can add it later on the case. Add one card per platform; save drafts anytime. Submit validates the full intake, assigns a public case ID from the selected service (EoVSS-, EoSM-, or ESSMSS- prefix), creates platform records, and opens the default task set (Intake Validation starts active immediately)."
       />
 
       {canCreate ? (

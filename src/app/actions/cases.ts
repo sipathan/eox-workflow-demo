@@ -103,7 +103,6 @@ function toCaseWriteData(data: DraftCaseInput | SubmitCaseInput, opts: { isDraft
     extensionStartDate: parseDateInput(data.extensionStartDate),
     extensionEndDate: parseDateInput(data.extensionEndDate),
     partnerName: data.partnerName?.trim() || null,
-    quantity: data.quantity ?? null,
     eolBulletinLink: null,
     serialNumbers: null,
     supportCoverageIndicator: data.supportCoverageIndicator?.trim() || null,
@@ -149,6 +148,7 @@ function assetRowsFromSubmit(rows: CaseAssetRowInput[]): CaseAssetRowWrite[] {
     eolBulletinLink: a.eolBulletinLink ?? null,
     hwLdosDate: parseDateInput(a.hwLdosDate),
     softwareVersion: a.softwareVersion?.trim() || null,
+    quantity: a.quantity ?? null,
     buCost: normalizeMoneyInput(a.buCost ?? 0),
     cxCost: normalizeMoneyInput(a.cxCost ?? 0),
   }));
@@ -172,6 +172,7 @@ async function replaceCaseAssets(
           eolBulletinLink: r.eolBulletinLink ?? null,
           hwLdosDate: r.hwLdosDate ?? null,
           softwareVersion: r.softwareVersion ?? null,
+          quantity: r.quantity ?? null,
           buCost: r.buCost ?? 0,
           cxCost: r.cxCost ?? 0,
         },

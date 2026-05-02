@@ -216,7 +216,7 @@ export async function updateCaseAssignmentAction(formData: FormData): Promise<vo
   if (!parsed.success) {
     goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid assignment update.", "error");
   }
-  const { caseId, ownerId, assignedTeamId, dealId, reason } = parsed.data;
+  const { caseId, ownerId, assignedTeamId, dealId, routingNote } = parsed.data;
   const { user, row } = await getCaseOrRedirect(caseId);
   const canManage =
     canUpdateCase(user, toCaseUpdateRow(row)) &&
@@ -229,13 +229,20 @@ export async function updateCaseAssignmentAction(formData: FormData): Promise<vo
       ownerId: ownerId ?? null,
       assignedTeamId: assignedTeamId ?? null,
       ...(dealId !== undefined ? { dealId } : {}),
+      ...(routingNote !== undefined ? { routingNote } : {}),
     },
   });
+  const noteLog =
+    routingNote === undefined
+      ? ""
+      : routingNote
+        ? ` | routingNote=${routingNote.length > 200 ? `${routingNote.slice(0, 200)}…` : routingNote}`
+        : " | routingNote=cleared";
   await logActivity(
     caseId,
     user.id,
     "case_assignment_updated",
-    `owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}${dealId !== undefined ? ` dealId=${dealId ?? "cleared"}` : ""}${reason ? ` | ${reason}` : ""}`
+    `owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}${dealId !== undefined ? ` dealId=${dealId ?? "cleared"}` : ""}${noteLog}`
   );
   revalidatePath(casePath(caseId));
   revalidatePath("/cases");

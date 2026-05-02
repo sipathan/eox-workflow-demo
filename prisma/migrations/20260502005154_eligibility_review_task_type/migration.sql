@@ -1,0 +1,3 @@
+-- SQLite stores `Task.type` as TEXT; new `EligibilityReview` values require no table rewrite.
+-- Prisma enum extension only.
+-- This is an empty migration.

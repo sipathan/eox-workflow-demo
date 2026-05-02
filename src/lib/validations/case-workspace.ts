@@ -26,7 +26,15 @@ export const caseAssignmentUpdateSchema = z.object({
       const t = s.trim();
       return t.length === 0 ? null : t;
     }),
-  reason: z.string().max(1000).optional().transform((s) => s?.trim() || undefined),
+  routingNote: z
+    .string()
+    .max(4000)
+    .optional()
+    .transform((s) => {
+      if (s === undefined) return undefined;
+      const t = s.trim();
+      return t.length === 0 ? null : t;
+    }),
 });
 
 export const addCommentSchema = z.object({

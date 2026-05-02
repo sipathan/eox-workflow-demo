@@ -55,27 +55,23 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
                     .slice(0, 2)
                     .join(", ") + (sn.length > 60 ? "…" : "")
                 : null;
-              return `${i + 1}. ${name}${snPreview ? `\n   Serials: ${snPreview}` : ""}`;
+              const qRaw = a.quantity;
+              const qNum = typeof qRaw === "number" ? qRaw : Number(String(qRaw ?? "").trim());
+              const qtyLine =
+                String(qRaw ?? "").trim() !== "" && Number.isFinite(qNum) && qNum >= 0
+                  ? `\n   Quantity: ${qNum}`
+                  : "";
+              return `${i + 1}. ${name}${snPreview ? `\n   Serials: ${snPreview}` : ""}${qtyLine}`;
             })
             .join("\n\n");
     const partnerLine = v.partnerName?.trim();
-    const qtyRaw = v.quantity;
-    let qtyNum = NaN;
-    if (typeof qtyRaw === "number" && Number.isFinite(qtyRaw)) qtyNum = qtyRaw;
-    else if (qtyRaw != null && String(qtyRaw).trim() !== "") {
-      const n = Number(qtyRaw);
-      if (Number.isFinite(n)) qtyNum = n;
-    }
-    const hasQuantity =
-      String(qtyRaw ?? "").trim() !== "" && Number.isFinite(qtyNum) && qtyNum >= 0;
     const lines: [string, string][] = [
       ["Service", formatRequestType(v.requestType ?? RequestType.EoVSS)],
       ["Customer", v.customerName || "—"],
       ["Deal ID", v.dealId?.trim() ? v.dealId : "Not set (CX / partner admin can add later)"],
     ];
     if (partnerLine) lines.push(["Partner (optional)", partnerLine]);
-    if (hasQuantity) lines.push(["Quantity (optional)", String(qtyNum)]);
-      if (v.requestType === RequestType.ESS_MSS) {
+    if (v.requestType === RequestType.ESS_MSS) {
       lines.push(["Support subtype", v.essSupportSubtype ? formatEssMssSupportSubtype(v.essSupportSubtype) : "—"]);
       if (v.migrationPlan?.trim()) {
         const mp = v.migrationPlan.trim();
@@ -141,6 +137,7 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
       eolBulletinLink: undefined,
       hwLdosDate: undefined,
       softwareVersion: undefined,
+      quantity: undefined,
       buCost: 0,
       cxCost: 0,
     }) satisfies CaseFormValues["assets"][number];
@@ -431,43 +428,21 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
             </Field>
           )}
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Partner &amp; volume (optional)</p>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Partner (optional)</p>
             <p className="text-xs text-slate-600">
-              Partner name and quantity are never required. Add them only if they help your team review this request.
+              Partner name is never required. Add it only if it helps your team review this request. Quantity is set per
+              platform in <strong className="font-medium text-slate-800">Platforms &amp; equipment</strong> below.
             </p>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="Partner name (optional)"
-                error={form.formState.errors.partnerName?.message}
-              >
-                <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Optional"
-                  aria-required="false"
-                  autoComplete="organization"
-                  {...form.register("partnerName")}
-                />
-              </Field>
-              <Field
-                label="Quantity (optional)"
-                error={
-                  typeof form.formState.errors.quantity?.message === "string"
-                    ? form.formState.errors.quantity.message
-                    : undefined
-                }
-              >
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  step={1}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Optional"
-                  aria-required="false"
-                  {...form.register("quantity")}
-                />
-              </Field>
-            </div>
+            <Field label="Partner name (optional)" error={form.formState.errors.partnerName?.message}>
+              <input
+                className="w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Optional"
+                aria-required="false"
+                autoComplete="organization"
+                {...form.register("partnerName")}
+              />
+            </Field>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -530,7 +505,7 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
                     ) : null}
                   </header>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="mt-4 grid gap-4 md:grid-cols-3">
                     <Field
                       label="Platform name"
                       hint="Required when you submit (and to save this card on draft)."
@@ -551,6 +526,26 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
                         className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                         placeholder="e.g. 17.9.4a"
                         {...form.register(`assets.${idx}.softwareVersion`)}
+                      />
+                    </Field>
+                    <Field
+                      label="Quantity (optional)"
+                      hint="Units or count for this platform line only."
+                      error={
+                        typeof form.formState.errors.assets?.[idx]?.quantity?.message === "string"
+                          ? form.formState.errors.assets[idx]?.quantity?.message
+                          : undefined
+                      }
+                    >
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={1}
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="Optional"
+                        aria-required="false"
+                        {...form.register(`assets.${idx}.quantity`)}
                       />
                     </Field>
                   </div>

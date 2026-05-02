@@ -208,13 +208,13 @@ model Case {
   essEligibilityAcknowledged Boolean @default(false)
   /// Optional for all request types (EoVSS, EoSM, ESS_MSS); must not block intake submit, draft save, or other case updates in this app.
   partnerName           String?
-  /// Optional for all request types; must not block intake or case updates. Null when unset.
-  quantity              Int?
   eolBulletinLink       String?
   serialNumbers         String?
   supportCoverageIndicator String?
   hwLdosDate            DateTime?
   notes                 String?
+  /// Optional CX routing / assignment context (distinct from intake `notes`). Editable on case detail by CX Ops / Platform Admin.
+  routingNote           String?
   quoteBookingStatus    QuoteBookingStatus @default(OPEN)
   /// Required in app validation when `quoteBookingStatus` is NOT_BOOKED or PASSED_OVER; otherwise null.
   notBookedReason       String?
@@ -251,6 +251,8 @@ model CaseAsset {
   eolBulletinLink String?
   hwLdosDate      DateTime?
   softwareVersion String?
+  /// Optional units / count for this platform line (not case-wide). Null when unset.
+  quantity        Int?
   /// Demo currency: USD; two decimal places enforced in app helpers.
   buCost          Float     @default(0)
   cxCost          Float     @default(0)

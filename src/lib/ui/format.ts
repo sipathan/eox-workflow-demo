@@ -29,11 +29,11 @@ const REQUEST_TYPE_LABEL: Record<RequestType, string> = {
 /** Short intake copy; EoSM = End of Software Maintenance (see docs/PROJECT_CONTEXT.md). */
 export const REQUEST_TYPE_INTAKE_HINT: Record<RequestType, string> = {
   EoVSS:
-    "Version / software support — serial numbers per platform are required when you submit. Partner name and quantity are optional for every service.",
+    "Version / software support — serial numbers per platform are required when you submit. Partner name is optional; quantity (if any) is per platform line.",
   EoSM:
-    "End of Software Maintenance (EoSM) — end of regular software maintenance and routine bug fixes for the product in scope; security fixes may continue per EoVS/EoVSS policy (product-dependent).",
+    "End of Software Maintenance (EoSM) — end of regular software maintenance and routine bug fixes for the product in scope; security fixes may continue per EoVS/EoVSS policy (product-dependent). Partner name is optional; quantity (if any) is per platform line.",
   ESS_MSS:
-    "ESS/MSS — extended support (ESS) scope with room for future MSS workflow; hardware and/or qualified on‑prem perpetual application software. Migration plan required on submit; partner and quantity stay optional.",
+    "ESS/MSS — extended support (ESS) scope with room for future MSS workflow; hardware and/or qualified on‑prem perpetual application software. Migration plan required on submit; partner optional; quantity per platform line if needed.",
 };
 
 const TASK_STATUS_LABEL: Record<TaskStatus, string> = {

@@ -5,52 +5,56 @@ Internal Cisco leadership demo prototype built locally on a laptop.
 Purpose
 This application is a local, non-production prototype to demonstrate how Cisco CX can digitize and streamline the handling of EoVSS, EoSM, and ESS/MSS requests.
 The goal of the prototype is to show:
-ï¿½ digital intake instead of Excel/PDF + email
-ï¿½ centralized case management
-ï¿½ task-based workflow orchestration
-ï¿½ role-based and assignment-based visibility
-	ï¿½	operational reporting and dashboards
+ digital intake instead of Excel/PDF + email
+ centralized case management
+ task-based workflow orchestration
+ role-based and assignment-based visibility
+		operational reporting and dashboards
 This prototype is for demonstration only and is not production-ready.
 Business Context
 Today, EoVSS / EoSM / ESS/MSS requests are handled through a fragmented process involving:
-ï¿½ Excel/PDF intake forms
-ï¿½ email-based coordination
-ï¿½ manually created Webex spaces
-ï¿½ spreadsheet trackers
-	ï¿½	disconnected systems such as CCW, VAP, and APAS/NPI
+ Excel/PDF intake forms
+ email-based coordination
+ manually created Webex spaces
+ spreadsheet trackers
+		disconnected systems such as CCW, VAP, and APAS/NPI
 This leads to:
-ï¿½ long cycle times, often 3-4 weeks
-ï¿½ duplicate data entry
-ï¿½ limited case visibility
-ï¿½ manual follow-up burden
-ï¿½ weak auditability
-	ï¿½	poor seller and stakeholder experience
+ long cycle times, often 3-4 weeks
+ duplicate data entry
+ limited case visibility
+ manual follow-up burden
+ weak auditability
+		poor seller and stakeholder experience
 The app should demonstrate a better future-state operating model.
 Product Positioning
 This application is a:
-ï¿½ case-management platform
-ï¿½ workflow-orchestration layer
-	ï¿½	operational system of record for request lifecycle tracking
+ case-management platform
+ workflow-orchestration layer
+		operational system of record for request lifecycle tracking
 This application is NOT:
-ï¿½ a quote engine
-ï¿½ an approval engine
-ï¿½ an APAS/NPI execution tool
-	ï¿½	a replacement for CCW, VAP, APAS, or Cisco SSO in this prototype
+ a quote engine
+ an approval engine
+ an APAS/NPI execution tool
+		a replacement for CCW, VAP, APAS, or Cisco SSO in this prototype
 In Phase 1 / MVP, the platform tracks and governs work across systems but does not execute external systems.
 Supported Request Types
 
-Use these request type identifiers consistently: **EoVSS**, **EoSM**, and **ESS/MSS** in customer-facing copy. In Prisma and server code the third enum value is **`ESS_MSS`**; public case IDs use the token **`ESSMSS`** (no slash). Do not re-store legacy **`EoSS`** as a `RequestType` â€” existing DB rows are migrated to **`ESS_MSS`**.
+Use these request type identifiers consistently: **EoVSS**, **EoSM**, and **ESS/MSS** in customer-facing copy. In Prisma and server code the third enum value is **`ESS_MSS`**; public case IDs use the token **`ESSMSS`** (no slash). Do not re-store legacy **`EoSS`** as a `RequestType` — existing DB rows are migrated to **`ESS_MSS`**.
 
-**EoSM â€” End of Software Maintenance**
+**EoSM — End of Software Maintenance**
 
 - **EoSM** means **End of Software Maintenance**. It marks the end of **regular software maintenance** and **routine bug fixes** for the product in scope (dates and scope follow official lifecycle policy).
 - Do **not** use **Service Migration** (or similar) wording when defining or describing **EoSM**; that is a different concept and must not be conflated with this request type.
 - **Security vulnerability fixes** may continue on a separate track according to **EoVS / EoVSS** policy and timelines; duration and eligibility are **product-dependent** and are not the same thing as routine software maintenance after the EoSM milestone.
 
-**Partner fields (`partnerName`, `quantity`)**
+**Partner name (`partnerName`)**
 
 - **Optional for every request type** (EoVSS, EoSM, and ESS/MSS / **`ESS_MSS`**).
-- Partner data **must not** block **request creation** (draft save or submit) or **case updates** (routing, tasks, booking, financials, or any other authorized case mutation in this codebase).
+- Partner name **must not** block **request creation** (draft save or submit) or **case updates** (routing, tasks, booking, financials, or any other authorized case mutation in this codebase).
+
+**Quantity (`CaseAsset.quantity`)**
+
+- **Optional per platform / equipment line** (not case-wide). Same non-blocking rule as partner name for intake and case updates in this codebase.
 
 Core Product Principles
 1. One request = one case record
@@ -62,327 +66,327 @@ Core Product Principles
 	7	Architecture should be future-friendly for production identity and access
 MVP Scope
 The prototype should include:
-ï¿½ local login
-ï¿½ role-aware UI
-ï¿½ team/queue-aware workflow behavior
-ï¿½ Home / My Work page
-ï¿½ Create Request page
-ï¿½ Case List / Queue page
-ï¿½ Case Detail page
-ï¿½ Reports Dashboard
-ï¿½ case + task model
-ï¿½ activity log
-ï¿½ notes/comments
-ï¿½ attachment metadata handling
-ï¿½ external reference tracking
-	ï¿½	seeded demo data
+ local login
+ role-aware UI
+ team/queue-aware workflow behavior
+ Home / My Work page
+ Create Request page
+ Case List / Queue page
+ Case Detail page
+ Reports Dashboard
+ case + task model
+ activity log
+ notes/comments
+ attachment metadata handling
+ external reference tracking
+		seeded demo data
 Out of Scope for Prototype
 Do not build:
-ï¿½ Cisco SSO
-ï¿½ real enterprise authentication
-ï¿½ real CCW integration
-ï¿½ real VAP integration
-ï¿½ real APAS/NPI integration
-ï¿½ real email delivery
-ï¿½ production deployment hardening
-ï¿½ full admin console
-	ï¿½	customer-facing portal
+ Cisco SSO
+ real enterprise authentication
+ real CCW integration
+ real VAP integration
+ real APAS/NPI integration
+ real email delivery
+ production deployment hardening
+ full admin console
+		customer-facing portal
 These may be referenced in the UI as future production direction only.
 Target Users / Personas
 	1	Account Team / Sales
-ï¿½ creates requests
-ï¿½ views own requests
-ï¿½ tracks status
-	ï¿½	mostly read-only after submission unless more information is requested
+ creates requests
+ views own requests
+ tracks status
+		mostly read-only after submission unless more information is requested
 	2	CX Operations
-ï¿½ primary workflow operator
-ï¿½ manages case lifecycle
-ï¿½ assigns work
-ï¿½ updates statuses
-ï¿½ tracks external dependencies
-	ï¿½	can close, reject, or cancel cases
+ primary workflow operator
+ manages case lifecycle
+ assigns work
+ updates statuses
+ tracks external dependencies
+		can close, reject, or cancel cases
 	3	BU Contributor / Engineering Contact
-ï¿½ views assigned work only
-ï¿½ updates BU Review or BU Pricing tasks
-	ï¿½	limited edit scope
+ views assigned work only
+ updates BU Review or BU Pricing tasks
+		limited edit scope
 	4	Finance Approver
-ï¿½ views assigned approval-related work only
-ï¿½ updates approval-related tasks
-	ï¿½	limited edit scope
+ views assigned approval-related work only
+ updates approval-related tasks
+		limited edit scope
 	5	Leadership Readonly
-ï¿½ read-only access
-	ï¿½	views dashboards and case summaries
+ read-only access
+		views dashboards and case summaries
 	6	Platform Admin
-ï¿½ full visibility for demo/admin purposes
-	ï¿½	can see all cases and dashboards
+ full visibility for demo/admin purposes
+		can see all cases and dashboards
 Access Model
 This prototype should support:
-ï¿½ multiple roles per user
-ï¿½ multiple team memberships per user
-ï¿½ role-based access
-ï¿½ assignment-based access
-	ï¿½	team/queue-based routing
+ multiple roles per user
+ multiple team memberships per user
+ role-based access
+ assignment-based access
+		team/queue-based routing
 Production direction:
-ï¿½ authentication would eventually move to Cisco SSO
-ï¿½ authorization would eventually come from enterprise groups plus assignment rules
-	ï¿½	this prototype should be structured so that local login can later be replaced cleanly
+ authentication would eventually move to Cisco SSO
+ authorization would eventually come from enterprise groups plus assignment rules
+		this prototype should be structured so that local login can later be replaced cleanly
 Recommended Roles
 Use these exact role keys:
-ï¿½ ACCOUNT_TEAM
-ï¿½ CX_OPS
-ï¿½ BU_CONTRIBUTOR
-ï¿½ FINANCE_APPROVER
-ï¿½ LEADERSHIP_READONLY
-	ï¿½	PLATFORM_ADMIN
+ ACCOUNT_TEAM
+ CX_OPS
+ BU_CONTRIBUTOR
+ FINANCE_APPROVER
+ LEADERSHIP_READONLY
+		PLATFORM_ADMIN
 A user may have multiple roles.
 Recommended Team / Queue Model
 Use teams/queues as first-class entities.
 Example demo teams:
-ï¿½ CX Ops Global
-ï¿½ BU Review Queue
-ï¿½ Finance Approvers
-ï¿½ Leadership
-	ï¿½	Platform Admin
+ CX Ops Global
+ BU Review Queue
+ Finance Approvers
+ Leadership
+		Platform Admin
 Cases and tasks may be assigned to:
-ï¿½ a specific user
-ï¿½ a team/queue
-	ï¿½	both
+ a specific user
+ a team/queue
+		both
 If a task is assigned to a team and no individual owner is set, an authorized member of that team should still be able to act on it.
 Case Status Model
 Use these exact case statuses:
-ï¿½ Draft
-ï¿½ Submitted
-ï¿½ In Review
-ï¿½ Awaiting Info
-ï¿½ In Progress
-ï¿½ Blocked
-ï¿½ Ready for Release
-ï¿½ Closed
-ï¿½ Rejected
-	ï¿½	Cancelled
+ Draft
+ Submitted
+ In Review
+ Awaiting Info
+ In Progress
+ Blocked
+ Ready for Release
+ Closed
+ Rejected
+		Cancelled
 Treat these as case-level lifecycle statuses.
 Task Model
 Tasks represent work happening inside or outside the platform.
 Use these exact task types:
-ï¿½ Intake Validation
-ï¿½ BU Review
-ï¿½ BU Pricing
-ï¿½ Quote Tracking
-ï¿½ VAP Tracking
-ï¿½ Flag Removal Tracking
-	ï¿½	Additional Info Request
+ Intake Validation
+ BU Review
+ BU Pricing
+ Quote Tracking
+ VAP Tracking
+ Flag Removal Tracking
+		Additional Info Request
 Use these exact task statuses:
-ï¿½ Not Started
-ï¿½ In Progress
-ï¿½ Completed
-ï¿½ Blocked
-	ï¿½	Not Required
+ Not Started
+ In Progress
+ Completed
+ Blocked
+		Not Required
 Each task should support:
-ï¿½ type
-ï¿½ status
-ï¿½ owner
-ï¿½ assigned team
-ï¿½ required/not required flag
-ï¿½ due date
-ï¿½ notes
-ï¿½ blocker reason
-ï¿½ not required reason
-	ï¿½	timestamps
+ type
+ status
+ owner
+ assigned team
+ required/not required flag
+ due date
+ notes
+ blocker reason
+ not required reason
+		timestamps
 Workflow Model
 The app should use a case + task architecture.
 Important:
-ï¿½ do not model the app as one rigid linear stage sequence
-ï¿½ case status reflects the overall state of the request
-	ï¿½	tasks reflect internal or external dependencies
+ do not model the app as one rigid linear stage sequence
+ case status reflects the overall state of the request
+		tasks reflect internal or external dependencies
 Examples:
-ï¿½ a case may be In Progress while BU Review is Completed and VAP Tracking is In Progress
-ï¿½ not every case requires every task
-ï¿½ some tasks may be marked Not Required with a reason
-	ï¿½	a case should not move to Ready for Release or Closed unless all required tasks are completed or marked Not Required
+ a case may be In Progress while BU Review is Completed and VAP Tracking is In Progress
+ not every case requires every task
+ some tasks may be marked Not Required with a reason
+		a case should not move to Ready for Release or Closed unless all required tasks are completed or marked Not Required
 Core Case Data Fields
 At minimum, cases should support:
-ï¿½ caseId
-ï¿½ requestType
-ï¿½ customerName
-ï¿½ partnerName (optional for all request types; must not block create or update)
-ï¿½ dealId
-ï¿½ platform
-ï¿½ softwareVersion
-ï¿½ status
-ï¿½ priority
-ï¿½ requester
-ï¿½ owner
-ï¿½ assignedTeam
-ï¿½ extensionStartDate
-ï¿½ extensionEndDate
-ï¿½ businessJustification
-ï¿½ migrationPlan (optional; intake UI: Supporting details ï¿½ not Service Migration)
-ï¿½ quantity (optional for all request types; must not block create or update)
-ï¿½ notes
-ï¿½ createdAt
-	ï¿½	updatedAt
+ caseId
+ requestType
+ customerName
+ partnerName (optional for all request types; must not block create or update)
+ dealId
+ platform
+ softwareVersion
+ status
+ priority
+ requester
+ owner
+ assignedTeam
+ extensionStartDate
+ extensionEndDate
+ businessJustification
+ migrationPlan (optional; intake UI: Supporting details  not Service Migration)
+ per-platform quantity on CaseAsset (optional; must not block create or update)
+ notes
+ createdAt
+		updatedAt
 Additional EoVSS-Oriented Demo Fields
 Support these fields for realistic intake behavior where practical:
-ï¿½ serialNumbers
-ï¿½ supportCoverageIndicator
-ï¿½ hwLdosDate
-	ï¿½	eolBulletinLink
+ serialNumbers
+ supportCoverageIndicator
+ hwLdosDate
+		eolBulletinLink
 These may be optional or dynamically shown depending on request type.
 External Reference Tracking
 The app should track external references as structured data, not just in notes.
 Support reference types such as:
-ï¿½ Quote ID
-ï¿½ VAP ID
-	ï¿½	APAS/NPI Reference
+ Quote ID
+ VAP ID
+		APAS/NPI Reference
 Each reference may include:
-ï¿½ reference type
-ï¿½ reference ID
-ï¿½ external status
-ï¿½ notes
-	ï¿½	related task
+ reference type
+ reference ID
+ external status
+ notes
+		related task
 Core Screens
 The MVP should include these screens:
 	1	Login
-	ï¿½	local demo login only
+		local demo login only
 	2	Home / My Work
-ï¿½ personalized view
-ï¿½ summary cards
-	ï¿½	recent or assigned work
+ personalized view
+ summary cards
+		recent or assigned work
 	3	Create Request
-ï¿½ request type selector
-ï¿½ dynamic intake form
-ï¿½ save draft
-	ï¿½	submit request
+ request type selector
+ dynamic intake form
+ save draft
+		submit request
 	4	Case List / Queue
-ï¿½ search
-ï¿½ filters
-ï¿½ status view
-	ï¿½	owner and team visibility
+ search
+ filters
+ status view
+		owner and team visibility
 	5	Case Detail
-ï¿½ summary
-ï¿½ metadata
-ï¿½ workflow/tasks
-ï¿½ external references
-ï¿½ comments
-ï¿½ activity log
-	ï¿½	attachments
+ summary
+ metadata
+ workflow/tasks
+ external references
+ comments
+ activity log
+		attachments
 	6	Reports Dashboard
-ï¿½ active vs closed
-ï¿½ cycle time
-ï¿½ blocked cases
-ï¿½ cases by status
-ï¿½ cases by request type
-	ï¿½	bottlenecks
+ active vs closed
+ cycle time
+ blocked cases
+ cases by status
+ cases by request type
+		bottlenecks
 Design Preferences
 The UI should be:
-ï¿½ desktop-first
-ï¿½ clean
-ï¿½ professional
-ï¿½ simple
-ï¿½ enterprise-style
-ï¿½ easy to demo to leadership
-	ï¿½	not overly flashy
+ desktop-first
+ clean
+ professional
+ simple
+ enterprise-style
+ easy to demo to leadership
+		not overly flashy
 Use:
-ï¿½ clear typography
-ï¿½ clean cards and tables
-ï¿½ consistent badges for status/priority/role
-ï¿½ simple charts
-	ï¿½	strong spacing and alignment
+ clear typography
+ clean cards and tables
+ consistent badges for status/priority/role
+ simple charts
+		strong spacing and alignment
 Authentication for Prototype
 This prototype must use local demo login only.
 Use these demo users:
-ï¿½ sales.demo@local
-ï¿½ cx.demo@local
-ï¿½ bu.demo@local
-ï¿½ finance.demo@local
-ï¿½ leader.demo@local
-	ï¿½	admin.demo@local
+ sales.demo@local
+ cx.demo@local
+ bu.demo@local
+ finance.demo@local
+ leader.demo@local
+		admin.demo@local
 Use this demo password for all users:
-	ï¿½	Demo123!
+		Demo123!
 Passwords should still be stored hashed.
 The UI should clearly display:
-ï¿½ Demo environment
-	ï¿½	Local authentication only
+ Demo environment
+		Local authentication only
 Demo Seed Data Expectations
 Seed realistic fake data:
-ï¿½ at least 12 cases
-ï¿½ mixed request types
-ï¿½ mixed priorities
-ï¿½ mixed statuses
-ï¿½ blocked cases
-ï¿½ in-review cases
-ï¿½ ready-for-release cases
-ï¿½ closed cases
-ï¿½ realistic customer names
-ï¿½ realistic task assignments
-	ï¿½	realistic quote / VAP / APAS reference IDs
+ at least 12 cases
+ mixed request types
+ mixed priorities
+ mixed statuses
+ blocked cases
+ in-review cases
+ ready-for-release cases
+ closed cases
+ realistic customer names
+ realistic task assignments
+		realistic quote / VAP / APAS reference IDs
 At least one user should have:
-ï¿½ multiple roles
-	ï¿½	or multiple team memberships
+ multiple roles
+		or multiple team memberships
 Reporting Requirements
 Dashboard should show:
-ï¿½ Total Active Cases
-ï¿½ Closed Cases
-ï¿½ Avg Cycle Time
-	ï¿½	Blocked Cases
+ Total Active Cases
+ Closed Cases
+ Avg Cycle Time
+		Blocked Cases
 Charts should include:
-ï¿½ cases by request type
-ï¿½ cases by status
-ï¿½ aging by status
-	ï¿½	monthly case volume
+ cases by request type
+ cases by status
+ aging by status
+		monthly case volume
 Also show:
-ï¿½ bottlenecks table
-	ï¿½	recent blocked cases
+ bottlenecks table
+		recent blocked cases
 Activity / Audit Expectations
 The app should maintain visible activity history for key actions such as:
-ï¿½ case created
-ï¿½ status changed
-ï¿½ owner changed
-ï¿½ task created
-ï¿½ task updated
-ï¿½ task completed
-ï¿½ task blocked
-ï¿½ note/comment added
-ï¿½ external reference added or updated
-	ï¿½	attachment metadata added
+ case created
+ status changed
+ owner changed
+ task created
+ task updated
+ task completed
+ task blocked
+ note/comment added
+ external reference added or updated
+		attachment metadata added
 Each activity item should include:
-ï¿½ timestamp
-ï¿½ user
-ï¿½ action
-	ï¿½	details
+ timestamp
+ user
+ action
+		details
 Role-Based Behavior Expectations
 Account Team:
-ï¿½ can create requests
-ï¿½ can view own requests
-ï¿½ read-only for most submitted cases
-	ï¿½	can respond to returned-for-info cases if implemented
+ can create requests
+ can view own requests
+ read-only for most submitted cases
+		can respond to returned-for-info cases if implemented
 CX Ops:
-ï¿½ can see all in-scope cases
-ï¿½ can update case status
-ï¿½ can assign owners
-ï¿½ can create/update tasks
-	ï¿½	can close/reject/cancel cases
+ can see all in-scope cases
+ can update case status
+ can assign owners
+ can create/update tasks
+		can close/reject/cancel cases
 BU Contributor:
-ï¿½ can see assigned cases/tasks only
-	ï¿½	can update assigned BU-related tasks
+ can see assigned cases/tasks only
+		can update assigned BU-related tasks
 Finance Approver:
-ï¿½ can see assigned approval-related work
-	ï¿½	can update assigned tasks only
+ can see assigned approval-related work
+		can update assigned tasks only
 Leadership Readonly:
-ï¿½ read-only dashboards
-	ï¿½	read-only case summaries
+ read-only dashboards
+		read-only case summaries
 Platform Admin:
-	ï¿½	full demo visibility and access
+		full demo visibility and access
 Technical Direction
 Preferred stack:
-ï¿½ Next.js
-ï¿½ TypeScript
-ï¿½ Tailwind CSS
-ï¿½ Prisma
-ï¿½ SQLite
-ï¿½ React Hook Form
-ï¿½ Zod
-	ï¿½	Recharts
+ Next.js
+ TypeScript
+ Tailwind CSS
+ Prisma
+ SQLite
+ React Hook Form
+ Zod
+		Recharts
 Architecture should remain simple and modular.
 Build Priorities
 1. Working local authentication
@@ -395,27 +399,27 @@ Build Priorities
 8. Reports Dashboard
 	9	Demo polish
 Important Implementation Notes
-ï¿½ This is a prototype, not a production system
-ï¿½ Optimize for clarity and demo value over completeness
-ï¿½ Keep code strongly typed
-ï¿½ Keep components modular
-ï¿½ Avoid overengineering
-ï¿½ Avoid fake production security claims
-	ï¿½	Preserve a path to future enterprise authentication and authorization
+ This is a prototype, not a production system
+ Optimize for clarity and demo value over completeness
+ Keep code strongly typed
+ Keep components modular
+ Avoid overengineering
+ Avoid fake production security claims
+		Preserve a path to future enterprise authentication and authorization
 Naming Consistency Rules
 Use these names consistently across code and UI:
-ï¿½ EoVSS
-ï¿½ EoSM (End of Software Maintenance; not Service Migration)
-â€¢ ESS/MSS (Prisma: ESS_MSS; public case ID prefix: ESSMSS)
-ï¿½ CX Operations
-ï¿½ BU Contributor
-ï¿½ Finance Approver
-ï¿½ Leadership Readonly
-	ï¿½	Platform Admin
+ EoVSS
+ EoSM (End of Software Maintenance; not Service Migration)
+• ESS/MSS (Prisma: ESS_MSS; public case ID prefix: ESSMSS)
+ CX Operations
+ BU Contributor
+ Finance Approver
+ Leadership Readonly
+		Platform Admin
 Do not use:
-ï¿½ legacy **EoSS** enum or IDs in new code (use **`ESS_MSS`** / **`ESSMSS-â€¦`**)
-ï¿½ inconsistent status names
-	ï¿½	inconsistent role names
+ legacy **EoSS** enum or IDs in new code (use **`ESS_MSS`** / **`ESSMSS-…`**)
+ inconsistent status names
+		inconsistent role names
 Goal of the Demo
 The prototype should make it easy to demonstrate:
 1. how requests are submitted digitally

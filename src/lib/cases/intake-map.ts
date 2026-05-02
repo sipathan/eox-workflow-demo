@@ -18,6 +18,7 @@ function assetsFromCase(assets: CaseAsset[] | undefined): CaseFormValues["assets
     eolBulletinLink: a.eolBulletinLink ?? undefined,
     hwLdosDate: isoDateOnly(a.hwLdosDate),
     softwareVersion: a.softwareVersion ?? undefined,
+    quantity: a.quantity ?? undefined,
     buCost: Number(a.buCost) || 0,
     cxCost: Number(a.cxCost) || 0,
   }));
@@ -55,7 +56,6 @@ export function caseToIntakeFormValues(
     environmentIsProduction: c.environmentIsProduction ?? undefined,
     essEligibilityAcknowledged: Boolean(c.essEligibilityAcknowledged),
     partnerName: c.partnerName ?? undefined,
-    quantity: c.quantity ?? undefined,
     supportCoverageIndicator: c.supportCoverageIndicator ?? undefined,
     notes: c.notes ?? undefined,
     attachments:
