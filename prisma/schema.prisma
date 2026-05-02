@@ -29,7 +29,15 @@ enum TeamType {
 enum RequestType {
   EoVSS
   EoSM
-  EoSS
+  /// Extended Support Services / MSS (combined bucket; UI label ESS/MSS). MSS-specific workflow may branch later via `essSupportSubtype` and flags.
+  ESS_MSS
+}
+
+/// ESS/MSS intake: what is in scope for this request (hardware, software, or both).
+enum EssMssSupportSubtype {
+  HARDWARE
+  SOFTWARE
+  HARDWARE_AND_SOFTWARE
 }
 
 enum CaseStatus {
@@ -54,6 +62,8 @@ enum Priority {
 
 enum TaskType {
   IntakeValidation       @map("Intake Validation")
+  /// ESS/MSS (and future MSS subflows): eligibility / scope review — subtype-specific copy lives in `Task.notes` at creation.
+  EligibilityReview      @map("Eligibility Review")
   BUReview               @map("BU Review")
   BUPricing              @map("BU Pricing")
   QuoteTracking          @map("Quote Tracking")
@@ -74,6 +84,14 @@ enum ExternalReferenceType {
   QUOTE_ID
   VAP_ID
   APAS_NPI
+}
+
+/// Commercial outcome for quote / booking tracking (case-level).
+enum QuoteBookingStatus {
+  OPEN
+  BOOKED
+  NOT_BOOKED
+  PASSED_OVER
 }
 
 model User {
@@ -145,14 +163,15 @@ model UserTeam {
   @@index([teamId])
 }
 
+/// One operational request. Platform-specific details live on `CaseAsset` rows.
 model Case {
   id                    String      @id @default(cuid())
   caseId                String      @unique
   requestType           RequestType
   customerName          String
-  dealId                String
-  platform              String
-  softwareVersion       String
+  dealId                String?
+  platform              String?
+  softwareVersion       String?
   status                CaseStatus  @default(Draft)
   priority              Priority    @default(Medium)
   requesterId           String
@@ -161,20 +180,51 @@ model Case {
   extensionStartDate    DateTime?
   extensionEndDate      DateTime?
   businessJustification String
+  /// EoVSS/EoSM: optional supporting details. ESS_MSS: migration plan summary/details (required on submit in app validation).
   migrationPlan         String?
+  /// ESS/MSS only: hardware / software / both. Null for EoVSS/EoSM.
+  essSupportSubtype     EssMssSupportSubtype?
+  /// ESS/MSS: key dates or rollout window for migration planning.
+  migrationTimeline     String?
+  /// ESS/MSS: planned replacement offering, if known.
+  targetReplacementProduct String?
+  /// ESS/MSS: assessed install site when hardware is in scope (subtype HARDWARE or HARDWARE_AND_SOFTWARE).
+  hardwarePhysicalLocation String?
+  /// ESS/MSS: how software is deployed when software is in scope.
+  softwareDeploymentType String?
+  /// ESS/MSS: application family / product type for software scope.
+  softwareProductFamily String?
+  /// Declared: on-premise (ESS software rules).
+  softwareOnPremise       Boolean?
+  /// Declared: perpetual license.
+  softwarePerpetualLicense Boolean?
+  /// Declared: application software (not network OS).
+  softwareIsApplicationSoftware Boolean?
+  /// Declared: not IOS / IOS-XR.
+  softwareNotIosIosXr   Boolean?
+  /// True = production use; false = lab/non-production (review / non-compliant path in UI).
+  environmentIsProduction Boolean?
+  /// User confirmed review when eligibility is non-default (e.g. lab, or declaration exceptions).
+  essEligibilityAcknowledged Boolean @default(false)
+  /// Optional for all request types (EoVSS, EoSM, ESS_MSS); must not block intake submit, draft save, or other case updates in this app.
   partnerName           String?
+  /// Optional for all request types; must not block intake or case updates. Null when unset.
   quantity              Int?
   eolBulletinLink       String?
   serialNumbers         String?
   supportCoverageIndicator String?
   hwLdosDate            DateTime?
   notes                 String?
+  quoteBookingStatus    QuoteBookingStatus @default(OPEN)
+  /// Required in app validation when `quoteBookingStatus` is NOT_BOOKED or PASSED_OVER; otherwise null.
+  notBookedReason       String?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
-  requester    User     @relation("CaseRequester", fields: [requesterId], references: [id])
-  owner        User?    @relation("CaseOwner", fields: [ownerId], references: [id])
-  assignedTeam Team?    @relation("CaseTeam", fields: [assignedTeamId], references: [id])
+  requester    User        @relation("CaseRequester", fields: [requesterId], references: [id])
+  owner        User?       @relation("CaseOwner", fields: [ownerId], references: [id])
+  assignedTeam Team?       @relation("CaseTeam", fields: [assignedTeamId], references: [id])
+  assets       CaseAsset[]
 
   tasks       Task[]
   comments    Comment[]
@@ -187,29 +237,59 @@ model Case {
   @@index([assignedTeamId])
   @@index([ownerId])
   @@index([requesterId])
+  @@index([quoteBookingStatus])
+}
+
+/// A platform / asset line item on a case (multi-platform support).
+model CaseAsset {
+  id              String    @id @default(cuid())
+  caseId          String
+  case            Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sortOrder       Int       @default(0)
+  platformName    String
+  serialNumbers   String?
+  eolBulletinLink String?
+  hwLdosDate      DateTime?
+  softwareVersion String?
+  /// Demo currency: USD; two decimal places enforced in app helpers.
+  buCost          Float     @default(0)
+  cxCost          Float     @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tasks Task[]
+
+  @@index([caseId])
 }
 
 model Task {
-  id                String     @id @default(cuid())
+  id                String      @id @default(cuid())
   caseId            String
-  case              Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case              Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  caseAssetId       String?
+  caseAsset         CaseAsset?  @relation(fields: [caseAssetId], references: [id])
   type              TaskType
-  status            TaskStatus @default(NotStarted)
+  status            TaskStatus  @default(NotStarted)
+  /// When true, the task participates in the activation chain and completion gates (inactive tasks are ignored until activated).
+  isRunnable        Boolean     @default(false)
+  /// First moment the task became runnable (used for “days active” in the UI).
+  activatedAt       DateTime?
   ownerId           String?
-  owner             User?      @relation("TaskOwner", fields: [ownerId], references: [id])
+  owner             User?       @relation("TaskOwner", fields: [ownerId], references: [id])
   assignedTeamId    String?
-  assignedTeam      Team?      @relation("TaskTeam", fields: [assignedTeamId], references: [id])
-  isRequired        Boolean    @default(true)
+  assignedTeam      Team?       @relation("TaskTeam", fields: [assignedTeamId], references: [id])
+  isRequired        Boolean     @default(true)
   dueDate           DateTime?
   notes             String?
   blockerReason     String?
   notRequiredReason String?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   references ExternalReference[]
 
   @@index([caseId])
+  @@index([caseAssetId])
   @@index([assignedTeamId])
   @@index([ownerId])
 }

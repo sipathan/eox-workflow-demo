@@ -5,11 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   CaseStatus,
+  QuoteBookingStatus,
   RoleKey,
   TaskStatus,
+  TaskType,
 } from "@prisma/client";
 import { getSessionUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
+import { applyTaskActivationRules } from "@/lib/workflow/task-activation";
 import {
   canUpdateCase,
   canUpdateTask,
@@ -22,12 +25,15 @@ import {
 import {
   addAttachmentMetadataSchema,
   addCommentSchema,
+  caseAssetCostsUpdateSchema,
   caseAssignmentUpdateSchema,
+  caseBookingUpdateSchema,
   caseStatusUpdateSchema,
   createTaskSchema,
   updateTaskSchema,
   upsertExternalReferenceSchema,
 } from "@/lib/validations/case-workspace";
+import { normalizeMoneyInput } from "@/lib/cases/financials";
 
 const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
   Draft: [CaseStatus.Submitted, CaseStatus.Cancelled],
@@ -133,6 +139,9 @@ async function getCaseOrRedirect(caseId: string) {
           type: true,
           status: true,
           isRequired: true,
+          isRunnable: true,
+          activatedAt: true,
+          caseAssetId: true,
         },
       },
     },
@@ -171,7 +180,13 @@ export async function updateCaseStatusAction(formData: FormData): Promise<void> 
     goCase(caseId, `Reason is required when setting ${toStatus}.`, "error");
   }
   if (COMPLETION_GATED_STATUSES.has(toStatus)) {
-    const incompleteRequired = row.tasks.some((t) => t.isRequired && t.status !== TaskStatus.Completed);
+    const incompleteRequired = row.tasks.some(
+      (t) =>
+        t.isRunnable &&
+        t.isRequired &&
+        t.status !== TaskStatus.Completed &&
+        t.status !== TaskStatus.NotRequired
+    );
     if (incompleteRequired) {
       goCase(caseId, `${toStatus} requires all required tasks to be completed.`, "error");
     }
@@ -201,7 +216,7 @@ export async function updateCaseAssignmentAction(formData: FormData): Promise<vo
   if (!parsed.success) {
     goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid assignment update.", "error");
   }
-  const { caseId, ownerId, assignedTeamId, reason } = parsed.data;
+  const { caseId, ownerId, assignedTeamId, dealId, reason } = parsed.data;
   const { user, row } = await getCaseOrRedirect(caseId);
   const canManage =
     canUpdateCase(user, toCaseUpdateRow(row)) &&
@@ -213,13 +228,14 @@ export async function updateCaseAssignmentAction(formData: FormData): Promise<vo
     data: {
       ownerId: ownerId ?? null,
       assignedTeamId: assignedTeamId ?? null,
+      ...(dealId !== undefined ? { dealId } : {}),
     },
   });
   await logActivity(
     caseId,
     user.id,
     "case_assignment_updated",
-    `owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}${reason ? ` | ${reason}` : ""}`
+    `owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}${dealId !== undefined ? ` dealId=${dealId ?? "cleared"}` : ""}${reason ? ` | ${reason}` : ""}`
   );
   revalidatePath(casePath(caseId));
   revalidatePath("/cases");
@@ -246,6 +262,8 @@ export async function createTaskAction(formData: FormData): Promise<void> {
       dueDate: parseDateOrNull(dueDate),
       notes: notes ?? null,
       isRequired: true,
+      isRunnable: true,
+      activatedAt: new Date(),
     },
   });
   await logActivity(
@@ -274,10 +292,10 @@ export async function updateTaskAction(formData: FormData): Promise<void> {
   if (!canEditTask) goCase(caseId, "You are not allowed to update this task.", "error");
 
   const canManageAssignments = hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
-  if (payload.status === TaskStatus.Blocked && !payload.blockerReason) {
+  if (payload.status === TaskStatus.Blocked && !payload.blockerReason?.trim()) {
     goCase(caseId, "Blocked tasks require blocker reason.", "error");
   }
-  if ((!payload.isRequired || payload.status === TaskStatus.NotRequired) && !payload.notRequiredReason) {
+  if (payload.status === TaskStatus.NotRequired && !payload.notRequiredReason?.trim()) {
     goCase(caseId, "Not Required tasks need a reason.", "error");
   }
 
@@ -291,9 +309,9 @@ export async function updateTaskAction(formData: FormData): Promise<void> {
     where: { id: taskId },
     data: {
       status,
-      notes: payload.notes ?? null,
-      blockerReason: payload.blockerReason ?? null,
-      notRequiredReason: payload.notRequiredReason ?? null,
+      notes: payload.notes?.trim() || null,
+      blockerReason: status === TaskStatus.Blocked ? payload.blockerReason?.trim() || null : null,
+      notRequiredReason: status === TaskStatus.NotRequired ? payload.notRequiredReason?.trim() || null : null,
       isRequired,
       ownerId: canManageAssignments ? payload.ownerId ?? null : task.ownerId,
       assignedTeamId: canManageAssignments ? payload.assignedTeamId ?? null : task.assignedTeamId,
@@ -307,8 +325,34 @@ export async function updateTaskAction(formData: FormData): Promise<void> {
     `${task.type} (${task.id.slice(-6)}) status=${status}${!isRequired ? " not-required" : ""}`
   );
 
+  await applyTaskActivationRules(caseId);
+
   revalidatePath(casePath(caseId));
   goCase(caseId, "Task updated.");
+}
+
+export async function activateAdditionalInfoTaskAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const caseId = raw.caseId?.trim();
+  if (!caseId) goCase(fallbackCaseId, "Missing case id.", "error");
+  const { user, row } = await getCaseOrRedirect(caseId);
+  const canManage =
+    canUpdateCase(user, toCaseUpdateRow(row)) &&
+    hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
+  if (!canManage) goCase(caseId, "Only CX Ops/Admin can activate this task.", "error");
+
+  await prisma.task.updateMany({
+    where: { caseId, type: TaskType.AdditionalInfoRequest },
+    data: {
+      isRunnable: true,
+      activatedAt: new Date(),
+      isRequired: true,
+    },
+  });
+  await logActivity(caseId, user.id, "task_activated", "Additional Info Request activated.");
+  revalidatePath(casePath(caseId));
+  goCase(caseId, "Additional Info task is now active.");
 }
 
 export async function upsertExternalReferenceAction(formData: FormData): Promise<void> {
@@ -415,5 +459,71 @@ export async function addAttachmentMetadataAction(formData: FormData): Promise<v
   await logActivity(caseId, user.id, "attachment_added", `${fileName}${mimeType ? ` (${mimeType})` : ""}`);
   revalidatePath(casePath(caseId));
   goCase(caseId, "Attachment metadata added.");
+}
+
+export async function updateCaseQuoteBookingAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = caseBookingUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid booking update.", "error");
+  }
+  const { caseId, quoteBookingStatus, notBookedReason } = parsed.data;
+  const { user, row } = await getCaseOrRedirect(caseId);
+  if (!canUpdateCase(user, toCaseUpdateRow(row))) {
+    goCase(caseId, "You are not allowed to update quote booking on this case.", "error");
+  }
+
+  const reasonAllowed =
+    quoteBookingStatus === QuoteBookingStatus.NOT_BOOKED ||
+    quoteBookingStatus === QuoteBookingStatus.PASSED_OVER;
+  const storedReason = reasonAllowed ? notBookedReason?.trim() ?? null : null;
+
+  await prisma.case.update({
+    where: { id: caseId },
+    data: {
+      quoteBookingStatus,
+      notBookedReason: storedReason,
+    },
+  });
+  await logActivity(
+    caseId,
+    user.id,
+    "quote_booking_updated",
+    `status=${quoteBookingStatus}${storedReason ? ` | ${storedReason.slice(0, 160)}` : ""}`,
+  );
+  revalidatePath(casePath(caseId));
+  revalidatePath("/cases");
+  revalidatePath("/");
+  goCase(caseId, "Quote booking updated.");
+}
+
+export async function updateCaseAssetCostsAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = caseAssetCostsUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid cost update.", "error");
+  }
+  const { caseId, assetId, buCost, cxCost } = parsed.data;
+  const { user, row } = await getCaseOrRedirect(caseId);
+  if (!canUpdateCase(user, toCaseUpdateRow(row))) {
+    goCase(caseId, "You are not allowed to update platform costs on this case.", "error");
+  }
+
+  const asset = await prisma.caseAsset.findFirst({ where: { id: assetId, caseId }, select: { id: true } });
+  if (!asset) goCase(caseId, "Platform row not found on this case.", "error");
+
+  const bu = normalizeMoneyInput(buCost);
+  const cx = normalizeMoneyInput(cxCost);
+  await prisma.caseAsset.update({
+    where: { id: assetId },
+    data: { buCost: bu, cxCost: cx },
+  });
+  await logActivity(caseId, user.id, "asset_costs_updated", `asset=${assetId.slice(-8)} bu=${bu} cx=${cx}`);
+  revalidatePath(casePath(caseId));
+  revalidatePath("/cases");
+  revalidatePath("/");
+  goCase(caseId, "Platform costs updated.");
 }
 

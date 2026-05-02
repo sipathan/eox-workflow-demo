@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EoX Workflow Demo",
-  description: "Queue-driven EoX request management demo",
+  title: "EoX Workflow Management Platform (Demo)",
+  description: "EoVSS / EoSM / ESS/MSS case management — internal leadership demo prototype",
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-screen flex-col">{children}</body>
     </html>
   );
 }

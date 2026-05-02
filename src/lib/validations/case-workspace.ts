@@ -1,4 +1,10 @@
-import { CaseStatus, ExternalReferenceType, TaskStatus, TaskType } from "@prisma/client";
+import {
+  CaseStatus,
+  ExternalReferenceType,
+  QuoteBookingStatus,
+  TaskStatus,
+  TaskType,
+} from "@prisma/client";
 import { z } from "zod";
 
 export const caseStatusUpdateSchema = z.object({
@@ -11,6 +17,15 @@ export const caseAssignmentUpdateSchema = z.object({
   caseId: z.string().min(1),
   ownerId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   assignedTeamId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
+  dealId: z
+    .string()
+    .max(120)
+    .optional()
+    .transform((s) => {
+      if (s === undefined) return undefined;
+      const t = s.trim();
+      return t.length === 0 ? null : t;
+    }),
   reason: z.string().max(1000).optional().transform((s) => s?.trim() || undefined),
 });
 
@@ -60,4 +75,34 @@ export const upsertExternalReferenceSchema = z.object({
   notes: z.string().max(2000).optional().transform((s) => s?.trim() || undefined),
   taskId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   existingReferenceId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
+});
+
+export const caseBookingUpdateSchema = z
+  .object({
+    caseId: z.string().min(1),
+    quoteBookingStatus: z.nativeEnum(QuoteBookingStatus),
+    notBookedReason: z
+      .string()
+      .max(2000)
+      .optional()
+      .transform((s) => (s?.trim() ? s.trim() : undefined)),
+  })
+  .superRefine((data, ctx) => {
+    const needsReason =
+      data.quoteBookingStatus === QuoteBookingStatus.NOT_BOOKED ||
+      data.quoteBookingStatus === QuoteBookingStatus.PASSED_OVER;
+    if (needsReason && !data.notBookedReason?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["notBookedReason"],
+        message: "A reason is required when booking status is Not booked or Passed over.",
+      });
+    }
+  });
+
+export const caseAssetCostsUpdateSchema = z.object({
+  caseId: z.string().min(1),
+  assetId: z.string().min(1),
+  buCost: z.coerce.number().min(0).max(999_999_999.99),
+  cxCost: z.coerce.number().min(0).max(999_999_999.99),
 });

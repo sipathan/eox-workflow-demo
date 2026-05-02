@@ -23,7 +23,7 @@ export type CaseAccessRow = Pick<Case, "requesterId" | "ownerId" | "assignedTeam
 
 export type CaseUpdateRow = CaseAccessRow & Pick<Case, "status">;
 
-export type TaskAccessRow = Pick<Task, "ownerId" | "assignedTeamId" | "type">;
+export type TaskAccessRow = Pick<Task, "ownerId" | "assignedTeamId" | "type" | "isRunnable">;
 
 function userTeamIds(user: SessionUser): Set<string> {
   return new Set(user.teams.map((t) => t.id));
@@ -104,6 +104,10 @@ export function canUpdateTask(user: SessionUser, task: TaskAccessRow, caseRow: C
   if (isPlatformAdmin(user)) return true;
   if (hasAnyRole(user, [RoleKey.CX_OPS])) return true;
 
+  if (!task.isRunnable) {
+    return false;
+  }
+
   const teamIds = userTeamIds(user);
   const onTask =
     task.ownerId === user.id || (!!task.assignedTeamId && teamIds.has(task.assignedTeamId));
@@ -125,6 +129,12 @@ export function canViewReports(user: SessionUser): boolean {
   if (hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN, RoleKey.LEADERSHIP_READONLY])) return true;
   if (hasAnyRole(user, [RoleKey.BU_CONTRIBUTOR, RoleKey.FINANCE_APPROVER])) return true;
   return false;
+}
+
+/** Intake / new request — matches `NewCasePage` gate (BU/Finance excluded; read-only leadership excluded). */
+export function canCreateRequest(user: SessionUser): boolean {
+  if (isReadOnlyDemoUser(user)) return false;
+  return hasAnyRole(user, [RoleKey.ACCOUNT_TEAM, RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
 }
 
 /** Leadership demo: read-only — block mutations in server actions and future forms. */

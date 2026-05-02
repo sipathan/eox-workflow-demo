@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { RoleKey } from "@prisma/client";
 import { getSessionUser } from "@/lib/auth/session";
-import { hasAnyRole, isReadOnlyDemoUser } from "@/lib/rbac";
+import { canCreateRequest } from "@/lib/rbac";
 import { getDraftCaseForUser } from "@/lib/cases/queries";
 import { caseToIntakeFormValues } from "@/lib/cases/intake-map";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -17,9 +15,7 @@ export default async function NewCasePage({
   const user = await getSessionUser();
   if (!user) redirect("/");
 
-  const canCreate =
-    !isReadOnlyDemoUser(user) &&
-    hasAnyRole(user, [RoleKey.ACCOUNT_TEAM, RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
+  const canCreate = canCreateRequest(user);
 
   const sp = await searchParams;
   const draftParam = typeof sp.draft === "string" ? sp.draft : undefined;
@@ -27,18 +23,10 @@ export default async function NewCasePage({
   const initialDefaults = draftRow ? caseToIntakeFormValues(draftRow) : undefined;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <p className="text-sm text-slate-500">
-        <Link href="/cases" className="text-sky-700 hover:underline">
-          Cases
-        </Link>
-        <span className="mx-1">/</span>
-        <span>New request</span>
-      </p>
-
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
       <PageHeader
         title="Create request"
-        description="Multi-step intake for EoVSS, EoSM, and EoSS. Save drafts anytime; submit runs full validation and routes to CX Ops Global."
+        description="Multi-step intake for EoVSS, EoSM (End of Software Maintenance), and ESS/MSS. Partner and quantity are optional. Deal ID is optional—CX Operations or your partner administrator can add it later on the case. Add one card per platform; save drafts anytime. Submit validates the full intake, assigns a public case ID from the selected service (EoVSS-, EoSM-, or ESSMSS- prefix), creates platform records, and opens the default task set (Intake Validation starts active immediately)."
       />
 
       {canCreate ? (

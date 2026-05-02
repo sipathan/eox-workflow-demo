@@ -1,6 +1,11 @@
-import Link from "next/link";
-import { demoLoginAction, demoLogoutAction } from "@/app/actions/auth";
+import { demoLoginAction } from "@/app/actions/auth";
+import { SignedInHomeBrandBanner } from "@/components/branding/SignedInHomeBrandBanner";
+import { CiscoBrandLogo } from "@/components/branding/CiscoBrandLogo";
+import { HomeWorkDashboard } from "@/components/home/HomeWorkDashboard";
+import { DashboardShell } from "@/components/layout/DashboardShell";
 import { getSessionUser } from "@/lib/auth/session";
+import { listCasesVisibleToUser } from "@/lib/cases/queries";
+import { canViewReports } from "@/lib/rbac";
 
 const DEMO_USERS = [
   { email: "sales.demo@local", label: "Account team" },
@@ -19,95 +24,125 @@ export default async function Home({
   const sp = await searchParams;
   const loginErr = sp.login;
   const user = await getSessionUser();
+  const visibleCases = user != null ? await listCasesVisibleToUser(user) : [];
+
+  if (user) {
+    return (
+      <DashboardShell user={user}>
+        <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+          <SignedInHomeBrandBanner />
+
+          <header className="space-y-2 border-b border-slate-200/80 pb-5">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Home</h1>
+            <p className="text-sm text-slate-600">
+              Signed in as <span className="font-medium text-slate-900">{user.name}</span>{" "}
+              <span className="text-slate-500">({user.email})</span>
+            </p>
+            <p className="max-w-2xl text-xs leading-relaxed text-slate-500">
+              Worklists are scoped by role and assignment. Use the left navigation for Cases, Create request, and Reports
+              (when available). Open any row for the full case workspace (read-only for leadership where applicable).
+            </p>
+          </header>
+
+          {loginErr === "invalid" ? (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+              Unknown or inactive demo email.
+            </p>
+          ) : null}
+          {loginErr === "config" ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              Set <code className="font-mono text-xs">SESSION_SECRET</code> in <code className="font-mono text-xs">.env</code>{" "}
+              to at least 32 characters (see <code className="font-mono text-xs">.env.example</code>), then restart{" "}
+              <code className="font-mono text-xs">npm run dev</code>.
+            </p>
+          ) : null}
+
+          <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-slate-900/[0.02]">
+            <HomeWorkDashboard
+              user={user}
+              visibleCases={visibleCases}
+              linkStatusChartToReports={canViewReports(user)}
+            />
+          </section>
+
+          <footer className="text-xs text-slate-500">
+            Port may differ (for example <code className="font-mono">3001</code>); use the URL printed in the terminal.
+          </footer>
+        </div>
+      </DashboardShell>
+    );
+  }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-2xl flex-col gap-8 px-6 py-16">
-      <header className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">EoX Workflow</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Demo workspace</h1>
-        <p className="text-sm leading-relaxed text-slate-600">
-          This is the EoX workflow demo app (not the generic Next.js starter). Pick a seeded demo user below,
-          then open cases and intake. Password for seeded accounts after{" "}
-          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">npm run db:seed</code>:{" "}
-          <strong className="font-medium text-slate-800">Demo123!</strong>
-        </p>
-      </header>
+    <div className="flex min-h-full flex-1 flex-col bg-slate-50">
+      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-sky-900 via-sky-600 to-sky-700" aria-hidden />
+      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-6 py-12">
+        <header className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <CiscoBrandLogo className="h-9 w-auto max-w-[6rem] object-contain object-left" />
+            <div className="min-w-0 border-slate-200 sm:border-l sm:pl-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sky-900">EoX Workflow Management Platform</p>
+              <p className="mt-0.5 text-xs text-slate-600">EoVSS / EoSM / ESS/MSS · Internal demo · Local sign-in</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Demo workspace</h1>
+            <p className="text-sm leading-relaxed text-slate-600">
+              Pick a seeded demo user below, then open cases and intake. Password for seeded accounts after{" "}
+              <code className="rounded bg-white px-1 py-0.5 font-mono text-xs ring-1 ring-slate-200">npm run db:seed</code>:{" "}
+              <strong className="font-medium text-slate-800">Demo123!</strong>
+            </p>
+          </div>
+        </header>
 
-      {loginErr === "invalid" ? (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-          Unknown or inactive demo email.
-        </p>
-      ) : null}
-      {loginErr === "config" ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Set <code className="font-mono text-xs">SESSION_SECRET</code> in <code className="font-mono text-xs">.env</code>{" "}
-          to at least 32 characters (see <code className="font-mono text-xs">.env.example</code>), then restart{" "}
-          <code className="font-mono text-xs">npm run dev</code>.
-        </p>
-      ) : null}
-
-      {user ? (
-        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-700">
-            Signed in as <span className="font-medium text-slate-900">{user.name}</span>{" "}
-            <span className="text-slate-500">({user.email})</span>
+        {loginErr === "invalid" ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+            Unknown or inactive demo email.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/cases"
-              className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-            >
-              Cases
-            </Link>
-            <Link
-              href="/cases/new"
-              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
-            >
-              New request
-            </Link>
-            <form action={demoLogoutAction}>
+        ) : null}
+        {loginErr === "config" ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Set <code className="font-mono text-xs">SESSION_SECRET</code> in <code className="font-mono text-xs">.env</code>{" "}
+            to at least 32 characters (see <code className="font-mono text-xs">.env.example</code>), then restart{" "}
+            <code className="font-mono text-xs">npm run dev</code>.
+          </p>
+        ) : null}
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/[0.02]">
+          <div className="h-0.5 bg-sky-700" aria-hidden />
+          <div className="p-6">
+            <h2 className="text-sm font-semibold text-slate-900">Demo sign-in</h2>
+            <p className="mt-1 text-xs text-slate-500">HttpOnly session cookie; local demo only.</p>
+            <form action={demoLoginAction} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="block flex-1 text-sm">
+                <span className="text-slate-700">User</span>
+                <select
+                  name="email"
+                  required
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  defaultValue="cx.demo@local"
+                >
+                  {DEMO_USERS.map((u) => (
+                    <option key={u.email} value={u.email}>
+                      {u.label} — {u.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-800"
               >
-                Sign out
+                Continue
               </button>
             </form>
           </div>
         </section>
-      ) : (
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">Demo sign-in</h2>
-          <p className="mt-1 text-xs text-slate-500">HttpOnly session cookie; local demo only.</p>
-          <form action={demoLoginAction} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="block flex-1 text-sm">
-              <span className="text-slate-700">User</span>
-              <select
-                name="email"
-                required
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm"
-                defaultValue="cx.demo@local"
-              >
-                {DEMO_USERS.map((u) => (
-                  <option key={u.email} value={u.email}>
-                    {u.label} — {u.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="submit"
-              className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white hover:bg-sky-800"
-            >
-              Continue
-            </button>
-          </form>
-        </section>
-      )}
 
-      <footer className="text-xs text-slate-500">
-        Port may differ (for example <code className="font-mono">3001</code>); use the URL printed in the terminal.
-      </footer>
+        <footer className="text-xs text-slate-500">
+          Port may differ (for example <code className="font-mono">3001</code>); use the URL printed in the terminal.
+        </footer>
+      </div>
     </div>
   );
 }

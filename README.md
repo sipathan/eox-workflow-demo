@@ -9,6 +9,8 @@ Leadership-ready demo for queue-driven EoX request management:
 
 > **Demo disclaimer:** this app uses synthetic sample data and local credentials only.
 
+**Product shorthand:** **EoSM** = **End of Software Maintenance** (see `docs/PROJECT_CONTEXT.md`). Third service bucket: **ESS/MSS** in UI, **`ESS_MSS`** in Prisma, public case IDs **`ESSMSS-…`**. **Partner name** and **quantity** are **optional for every service** and are not required to submit or update a case in this demo.
+
 ## Stack
 
 - Next.js App Router + TypeScript

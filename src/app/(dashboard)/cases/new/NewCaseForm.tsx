@@ -1,18 +1,19 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Priority, RequestType } from "@prisma/client";
+import { EssMssSupportSubtype, Priority, RequestType } from "@prisma/client";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { saveCaseDraftAction, submitCaseIntakeAction } from "@/app/actions/cases";
 import {
   caseIntakeDefaultValues,
   type CaseFormValues,
 } from "@/lib/validations/case";
-import { formatRequestType } from "@/lib/ui/format";
+import { IntakeAssetFinancialFields } from "@/components/case/IntakeAssetFinancialFields";
+import { formatEssMssSupportSubtype, formatRequestType, REQUEST_TYPE_INTAKE_HINT } from "@/lib/ui/format";
 
-const STEPS = ["Request", "Essentials", "Details", "Attachments & review"] as const;
+const STEPS = ["Request", "Essentials", "Details & platforms", "Attachments & review"] as const;
 
 export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormValues }) {
   const router = useRouter();
@@ -25,7 +26,13 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
     defaultValues: initialDefaults ?? caseIntakeDefaultValues,
   });
 
+  const { fields: assetFields, append: appendAsset, remove: removeAsset } = useFieldArray({
+    control: form.control,
+    name: "assets",
+  });
+
   const requestType = useWatch({ control: form.control, name: "requestType" });
+  const essSubtype = useWatch({ control: form.control, name: "essSupportSubtype" });
   const values = useWatch({ control: form.control });
 
   const draftId = form.watch("draftCaseInternalId");
@@ -33,15 +40,59 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
   const summaryLines = useMemo(() => {
     const v = values;
     if (!v) return [];
-    return [
-      ["Request type", formatRequestType(v.requestType ?? RequestType.EoVSS)],
+    const assetSummary =
+      (v.assets?.length ?? 0) === 0
+        ? "—"
+        : (v.assets ?? [])
+            .map((a, i) => {
+              const name = a.platformName?.trim() || "(unnamed)";
+              const sn = a.serialNumbers?.trim();
+              const snPreview = sn
+                ? sn
+                    .split(/\n|,/)
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .join(", ") + (sn.length > 60 ? "…" : "")
+                : null;
+              return `${i + 1}. ${name}${snPreview ? `\n   Serials: ${snPreview}` : ""}`;
+            })
+            .join("\n\n");
+    const partnerLine = v.partnerName?.trim();
+    const qtyRaw = v.quantity;
+    let qtyNum = NaN;
+    if (typeof qtyRaw === "number" && Number.isFinite(qtyRaw)) qtyNum = qtyRaw;
+    else if (qtyRaw != null && String(qtyRaw).trim() !== "") {
+      const n = Number(qtyRaw);
+      if (Number.isFinite(n)) qtyNum = n;
+    }
+    const hasQuantity =
+      String(qtyRaw ?? "").trim() !== "" && Number.isFinite(qtyNum) && qtyNum >= 0;
+    const lines: [string, string][] = [
+      ["Service", formatRequestType(v.requestType ?? RequestType.EoVSS)],
       ["Customer", v.customerName || "—"],
-      ["Deal ID", v.dealId || "—"],
-      ["Platform", v.platform || "—"],
-      ["Software", v.softwareVersion || "—"],
+      ["Deal ID", v.dealId?.trim() ? v.dealId : "Not set (CX / partner admin can add later)"],
+    ];
+    if (partnerLine) lines.push(["Partner (optional)", partnerLine]);
+    if (hasQuantity) lines.push(["Quantity (optional)", String(qtyNum)]);
+      if (v.requestType === RequestType.ESS_MSS) {
+      lines.push(["Support subtype", v.essSupportSubtype ? formatEssMssSupportSubtype(v.essSupportSubtype) : "—"]);
+      if (v.migrationPlan?.trim()) {
+        const mp = v.migrationPlan.trim();
+        lines.push(["Migration plan", mp.length > 220 ? `${mp.slice(0, 220)}…` : mp]);
+      }
+      if (v.migrationTimeline?.trim()) lines.push(["Migration timeline", v.migrationTimeline.trim()]);
+      if (v.targetReplacementProduct?.trim()) lines.push(["Target replacement", v.targetReplacementProduct.trim()]);
+      if (v.hardwarePhysicalLocation?.trim()) lines.push(["Hardware location", v.hardwarePhysicalLocation.trim()]);
+      if (v.softwareDeploymentType?.trim()) lines.push(["Software deployment", v.softwareDeploymentType.trim()]);
+      if (v.softwareProductFamily?.trim()) lines.push(["Software product family", v.softwareProductFamily.trim()]);
+    }
+    lines.push(
+      ["Platforms", assetSummary],
       ["Extension", [v.extensionStartDate, v.extensionEndDate].filter(Boolean).join(" → ") || "—"],
       ["Justification", v.businessJustification ? `${v.businessJustification.slice(0, 120)}…` : "—"],
-    ] as const;
+    );
+    return lines;
   }, [values]);
 
   const onSaveDraft = async () => {
@@ -83,6 +134,17 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
+  const emptyAssetRow = () =>
+    ({
+      platformName: "",
+      serialNumbers: undefined,
+      eolBulletinLink: undefined,
+      hwLdosDate: undefined,
+      softwareVersion: undefined,
+      buCost: 0,
+      cxCost: 0,
+    }) satisfies CaseFormValues["assets"][number];
+
   return (
     <div className="space-y-8">
       <input type="hidden" {...form.register("draftCaseInternalId")} />
@@ -109,15 +171,22 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
       {draftId ? (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
           Editing a saved draft. Use <strong>Save draft</strong> anytime; <strong>Submit request</strong> validates
-          the full intake and routes to CX Ops.
+          the full intake and routes to CX Ops. Only platform cards with a <strong>platform name</strong> are stored
+          on draft save.
         </p>
       ) : null}
 
       {step === 0 ? (
         <section className="space-y-6">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Request type</h2>
-            <p className="mt-1 text-xs text-slate-500">Choose the EoX path. Later steps show fields relevant to that type.</p>
+            <h2 className="text-sm font-semibold text-slate-900">Service</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Choose <strong className="font-medium text-slate-700">EoVSS</strong>,{" "}
+              <strong className="font-medium text-slate-700">EoSM</strong>, or{" "}
+              <strong className="font-medium text-slate-700">ESS/MSS</strong>. Later steps add the{" "}
+              <strong className="font-medium text-slate-700">ESS/MSS</strong> intake block only when that service is
+              selected.
+            </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {Object.values(RequestType).map((rt) => (
                 <label
@@ -128,13 +197,7 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
                 >
                   <input type="radio" className="sr-only" {...form.register("requestType")} value={rt} />
                   <span className="text-sm font-semibold text-slate-900">{formatRequestType(rt)}</span>
-                  <span className="mt-1 text-xs text-slate-600">
-                    {rt === RequestType.EoVSS
-                      ? "Version / software support — serials & HW LDOS common."
-                      : rt === RequestType.EoSM
-                        ? "Service migration — migration plan is key."
-                        : "Extended support — partner & quantity required."}
-                  </span>
+                  <span className="mt-1 text-xs text-slate-600">{REQUEST_TYPE_INTAKE_HINT[rt]}</span>
                 </label>
               ))}
             </div>
@@ -158,29 +221,22 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
       ) : null}
 
       {step === 1 ? (
-        <section className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-6 md:grid-cols-2">
           <Field label="Customer name" error={form.formState.errors.customerName?.message}>
             <input
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
               {...form.register("customerName")}
             />
           </Field>
-          <Field label="Deal ID" error={form.formState.errors.dealId?.message}>
+          <Field
+            label="Deal ID"
+            hint="Optional. If you do not have a Deal ID yet, leave this blank—CX Operations or your partner administrator can add or update it on the case after submission."
+            error={form.formState.errors.dealId?.message}
+          >
             <input
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              placeholder="e.g. DEAL-12345 (optional)"
               {...form.register("dealId")}
-            />
-          </Field>
-          <Field label="Platform" error={form.formState.errors.platform?.message}>
-            <input
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              {...form.register("platform")}
-            />
-          </Field>
-          <Field label="Software version" error={form.formState.errors.softwareVersion?.message}>
-            <input
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              {...form.register("softwareVersion")}
             />
           </Field>
           <Field label="Extension start" error={form.formState.errors.extensionStartDate?.message}>
@@ -193,7 +249,7 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
       ) : null}
 
       {step === 2 ? (
-        <section className="space-y-6">
+        <section className="space-y-8">
           <Field label="Business justification" error={form.formState.errors.businessJustification?.message}>
             <textarea
               rows={5}
@@ -202,62 +258,217 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
               {...form.register("businessJustification")}
             />
           </Field>
-          <Field label="Migration plan" error={form.formState.errors.migrationPlan?.message}>
-            <textarea
-              rows={4}
-              placeholder={requestType === RequestType.EoSM ? "Required for EoSM (min. 10 characters on submit)." : "Optional unless EoSM."}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              {...form.register("migrationPlan")}
-            />
-          </Field>
+          {requestType === RequestType.ESS_MSS ? (
+            <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-5 ring-1 ring-emerald-900/10">
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-950">ESS/MSS</h3>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-900/85">
+                  <strong className="font-medium text-emerald-950">ESS/MSS</strong> uses ESS-oriented intake fields
+                  today; MSS-specific workflow is not enabled yet. The fields below apply only to this service;
+                  platforms and serials stay on each card in{" "}
+                  <strong className="font-medium">Platforms &amp; equipment</strong>.
+                </p>
+              </div>
 
-          {requestType === RequestType.EoVSS ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">EoVSS — software & assets</p>
-              <Field label="Serial numbers / asset identifiers" error={form.formState.errors.serialNumbers?.message}>
-                <textarea
-                  rows={3}
-                  placeholder="One per line or comma-separated"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  {...form.register("serialNumbers")}
-                />
-              </Field>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="EoL bulletin link" error={form.formState.errors.eolBulletinLink?.message}>
-                  <input
-                    type="url"
-                    placeholder="https://…"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    {...form.register("eolBulletinLink")}
+              <div className="rounded-lg border border-emerald-100/80 bg-white p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Support subtype</p>
+                <p className="mt-1 text-xs text-slate-500">Hardware, Software, or both.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  {Object.values(EssMssSupportSubtype).map((s) => (
+                    <label
+                      key={s}
+                      className={`flex cursor-pointer flex-col rounded-lg border px-3 py-3 text-left transition ${
+                        essSubtype === s
+                          ? "border-emerald-500 bg-emerald-50/80 ring-1 ring-emerald-400"
+                          : "border-slate-200 bg-white hover:border-emerald-200"
+                      }`}
+                    >
+                      <input type="radio" className="sr-only" {...form.register("essSupportSubtype")} value={s} />
+                      <span className="text-sm font-medium text-slate-900">{formatEssMssSupportSubtype(s)}</span>
+                    </label>
+                  ))}
+                </div>
+                {form.formState.errors.essSupportSubtype?.message ? (
+                  <p className="mt-2 text-xs text-rose-700">{form.formState.errors.essSupportSubtype.message}</p>
+                ) : null}
+              </div>
+
+              <div className="rounded-lg border border-emerald-100/80 bg-white p-4 shadow-sm space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Migration plan</p>
+                <Field
+                  label="Details (required on submit)"
+                  hint="Scope, cutover, dependencies, and rollback — minimum length enforced when you submit."
+                  error={form.formState.errors.migrationPlan?.message}
+                >
+                  <textarea
+                    rows={5}
+                    placeholder="Describe migration approach, milestones, and customer impact…"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    {...form.register("migrationPlan")}
                   />
                 </Field>
-                <Field label="HW LDOS date" error={form.formState.errors.hwLdosDate?.message}>
-                  <input type="date" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" {...form.register("hwLdosDate")} />
-                </Field>
-              </div>
-            </div>
-          ) : null}
-
-          {requestType === RequestType.EoSS ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">EoSS — partner & volume</p>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Partner name" error={form.formState.errors.partnerName?.message}>
-                  <input className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" {...form.register("partnerName")} />
+                <Field label="Timeline (optional)" error={form.formState.errors.migrationTimeline?.message}>
+                  <textarea
+                    rows={2}
+                    placeholder="Key dates or phased rollout window…"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    {...form.register("migrationTimeline")}
+                  />
                 </Field>
                 <Field
-                  label="Quantity"
-                  error={
-                    typeof form.formState.errors.quantity?.message === "string"
-                      ? form.formState.errors.quantity.message
-                      : undefined
-                  }
+                  label="Target replacement product or service (optional)"
+                  error={form.formState.errors.targetReplacementProduct?.message}
                 >
-                  <input type="number" min={1} step={1} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" {...form.register("quantity")} />
+                  <input
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="e.g. SKU or service name if known"
+                    {...form.register("targetReplacementProduct")}
+                  />
                 </Field>
               </div>
+
+              {(essSubtype === EssMssSupportSubtype.HARDWARE ||
+                essSubtype === EssMssSupportSubtype.HARDWARE_AND_SOFTWARE) && (
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Hardware location</p>
+                  <p className="text-xs text-slate-500">
+                    Required on submit when hardware is in scope. Add serial numbers and platform lines in{" "}
+                    <strong className="font-medium text-slate-700">Platforms &amp; equipment</strong> below.
+                  </p>
+                  <Field
+                    label="Physical location (site / datacenter)"
+                    error={form.formState.errors.hardwarePhysicalLocation?.message}
+                  >
+                    <textarea
+                      rows={2}
+                      placeholder="Address or site reference used for hardware support assessment…"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      {...form.register("hardwarePhysicalLocation")}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              {(essSubtype === EssMssSupportSubtype.SOFTWARE ||
+                essSubtype === EssMssSupportSubtype.HARDWARE_AND_SOFTWARE) && (
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Software &amp; eligibility</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Deployment and product context; checkboxes document intent for review (not IOS/IOS‑XR application
+                      stack).
+                    </p>
+                  </div>
+                  <Field label="Deployment type" error={form.formState.errors.softwareDeploymentType?.message}>
+                    <input
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="e.g. on‑prem cluster, HA pair, virtualized app tier…"
+                      {...form.register("softwareDeploymentType")}
+                    />
+                  </Field>
+                  <Field
+                    label="Product family / application type"
+                    error={form.formState.errors.softwareProductFamily?.message}
+                  >
+                    <input
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Application or product family (not IOS/IOS‑XR)…"
+                      {...form.register("softwareProductFamily")}
+                    />
+                  </Field>
+                  <Field label="Environment" error={form.formState.errors.environmentIsProduction?.message}>
+                    <select
+                      className="w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      {...form.register("environmentIsProduction", {
+                        setValueAs: (v: string) => (v === "" ? undefined : v === "true"),
+                      })}
+                    >
+                      <option value="">Select…</option>
+                      <option value="true">Production</option>
+                      <option value="false">Lab / non-production (review)</option>
+                    </select>
+                  </Field>
+                  <fieldset className="rounded-md border border-slate-100 bg-slate-50/80 px-3 py-3">
+                    <legend className="px-1 text-xs font-medium text-slate-700">Software declarations</legend>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {(
+                        [
+                          ["softwareOnPremise", "On‑premise deployment"],
+                          ["softwarePerpetualLicense", "Perpetual license"],
+                          ["softwareIsApplicationSoftware", "Application software (not network OS)"],
+                          ["softwareNotIosIosXr", "Not IOS / IOS‑XR"],
+                        ] as const
+                      ).map(([name, label]) => (
+                        <label key={name} className="flex cursor-pointer items-start gap-2 text-xs text-slate-700">
+                          <input type="checkbox" className="mt-0.5 rounded border-slate-300" {...form.register(name)} />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-100 bg-amber-50/50 px-3 py-2 text-xs text-amber-950">
+                    <input type="checkbox" className="mt-0.5 rounded border-slate-300" {...form.register("essEligibilityAcknowledged")} />
+                    <span>
+                      I confirm CX may need an eligibility review when any declaration is unchecked or the environment is
+                      lab / non‑production.
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
-          ) : null}
+          ) : (
+            <Field
+              label="Supporting details (optional)"
+              hint="Optional context for reviewers (timelines, coverage needs, or related notes). Not required for EoVSS / EoSM."
+              error={form.formState.errors.migrationPlan?.message}
+            >
+              <textarea
+                rows={4}
+                placeholder="Optional — e.g. key dates, scope notes, or references useful for CX/BU review."
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                {...form.register("migrationPlan")}
+              />
+            </Field>
+          )}
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Partner &amp; volume (optional)</p>
+            <p className="text-xs text-slate-600">
+              Partner name and quantity are never required. Add them only if they help your team review this request.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field
+                label="Partner name (optional)"
+                error={form.formState.errors.partnerName?.message}
+              >
+                <input
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Optional"
+                  aria-required="false"
+                  autoComplete="organization"
+                  {...form.register("partnerName")}
+                />
+              </Field>
+              <Field
+                label="Quantity (optional)"
+                error={
+                  typeof form.formState.errors.quantity?.message === "string"
+                    ? form.formState.errors.quantity.message
+                    : undefined
+                }
+              >
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  step={1}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Optional"
+                  aria-required="false"
+                  {...form.register("quantity")}
+                />
+              </Field>
+            </div>
+          </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Support coverage indicator" error={form.formState.errors.supportCoverageIndicator?.message}>
@@ -277,6 +488,124 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
           <Field label="Internal notes" error={form.formState.errors.notes?.message}>
             <textarea rows={3} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" {...form.register("notes")} />
           </Field>
+
+          <div className="border-t border-slate-200 pt-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="max-w-xl">
+                <h3 className="text-sm font-semibold text-slate-900">Platforms & equipment</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Use a separate card for each platform or SKU. Serial numbers and lifecycle fields belong to that card
+                  only. On submit, BU Review and BU Pricing tasks are created <strong>per platform</strong>; Intake
+                  Validation opens immediately.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                onClick={() => appendAsset(emptyAssetRow())}
+              >
+                Add platform
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {assetFields.map((field, idx) => (
+                <article
+                  key={field.id}
+                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/5"
+                >
+                  <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Platform {idx + 1}
+                      {assetFields.length > 1 ? <span className="font-normal text-slate-400"> of {assetFields.length}</span> : null}
+                    </h4>
+                    {assetFields.length > 1 ? (
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-rose-700 hover:underline"
+                        onClick={() => removeAsset(idx)}
+                      >
+                        Remove platform
+                      </button>
+                    ) : null}
+                  </header>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <Field
+                      label="Platform name"
+                      hint="Required when you submit (and to save this card on draft)."
+                      error={form.formState.errors.assets?.[idx]?.platformName?.message}
+                    >
+                      <input
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="e.g. ASR 9000, Catalyst 9300"
+                        {...form.register(`assets.${idx}.platformName`)}
+                      />
+                    </Field>
+                    <Field
+                      label="Software version"
+                      hint="Optional unless you need it for clarity."
+                      error={form.formState.errors.assets?.[idx]?.softwareVersion?.message}
+                    >
+                      <input
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="e.g. 17.9.4a"
+                        {...form.register(`assets.${idx}.softwareVersion`)}
+                      />
+                    </Field>
+                  </div>
+
+                  <IntakeAssetFinancialFields
+                    control={form.control}
+                    register={form.register}
+                    index={idx}
+                    buError={form.formState.errors.assets?.[idx]?.buCost?.message}
+                    cxError={form.formState.errors.assets?.[idx]?.cxCost?.message}
+                    setCxValue={(cx) =>
+                      form.setValue(`assets.${idx}.cxCost`, cx, { shouldValidate: true, shouldDirty: true })
+                    }
+                  />
+
+                  <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50/90 p-4">
+                    <p className="text-xs font-semibold text-slate-800">Serial numbers &amp; lifecycle (this platform)</p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {requestType === RequestType.EoVSS
+                        ? "Serial numbers or asset IDs are required for each platform when you submit an EoVSS request."
+                        : requestType === RequestType.ESS_MSS
+                          ? "ESS/MSS hardware scope: include serials on at least one platform when you submit. Software scope: serials optional but useful."
+                          : "Optional for EoSM; include if it helps CX and BU review this line item."}
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      <Field
+                        label="Serial numbers / asset identifiers"
+                        error={form.formState.errors.assets?.[idx]?.serialNumbers?.message}
+                      >
+                        <textarea
+                          rows={3}
+                          placeholder="One per line or comma-separated — scoped to this platform only"
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                          {...form.register(`assets.${idx}.serialNumbers`)}
+                        />
+                      </Field>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <Field label="EoL bulletin link" error={form.formState.errors.assets?.[idx]?.eolBulletinLink?.message}>
+                          <input
+                            type="url"
+                            placeholder="https://…"
+                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                            {...form.register(`assets.${idx}.eolBulletinLink`)}
+                          />
+                        </Field>
+                        <Field label="Hardware LDOS date" error={form.formState.errors.assets?.[idx]?.hwLdosDate?.message}>
+                          <input type="date" className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" {...form.register(`assets.${idx}.hwLdosDate`)} />
+                        </Field>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
         </section>
       ) : null}
 
@@ -337,13 +666,21 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
             </ul>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-inner">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-inner">
             <h3 className="text-sm font-semibold text-slate-900">Review</h3>
-            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               {summaryLines.map(([k, v]) => (
-                <div key={k} className="min-w-0">
+                <div key={k} className={`min-w-0 ${k === "Migration plan" || k === "Platforms" ? "sm:col-span-2" : ""}`}>
                   <dt className="text-xs uppercase text-slate-500">{k}</dt>
-                  <dd className="truncate text-slate-800">{v}</dd>
+                  <dd
+                    className={
+                      k === "Platforms" || k === "Migration plan"
+                        ? "whitespace-pre-wrap break-words text-slate-800"
+                        : "truncate text-slate-800"
+                    }
+                  >
+                    {v}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -398,16 +735,19 @@ export function NewCaseForm({ initialDefaults }: { initialDefaults?: CaseFormVal
 
 function Field({
   label,
+  hint,
   error,
   children,
 }: {
   label: string;
+  hint?: string;
   error?: string;
   children: ReactNode;
 }) {
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+      {hint ? <p className="mb-2 text-xs leading-relaxed text-slate-500">{hint}</p> : null}
       {children}
       {error ? <p className="mt-1 text-xs text-rose-700">{error}</p> : null}
     </div>

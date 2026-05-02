@@ -1,4 +1,4 @@
-import type { Attachment, Case } from "@prisma/client";
+import type { Attachment, Case, CaseAsset } from "@prisma/client";
 import { caseIntakeDefaultValues, type CaseFormValues } from "@/lib/validations/case";
 
 function isoDateOnly(d: Date | null | undefined): string | undefined {
@@ -10,8 +10,24 @@ function isDraftPlaceholderJustification(s: string): boolean {
   return s.startsWith("Pending — draft") || s.startsWith("Draft —");
 }
 
+function assetsFromCase(assets: CaseAsset[] | undefined): CaseFormValues["assets"] {
+  if (!assets?.length) return caseIntakeDefaultValues.assets ?? [];
+  return assets.map((a) => ({
+    platformName: a.platformName,
+    serialNumbers: a.serialNumbers ?? undefined,
+    eolBulletinLink: a.eolBulletinLink ?? undefined,
+    hwLdosDate: isoDateOnly(a.hwLdosDate),
+    softwareVersion: a.softwareVersion ?? undefined,
+    buCost: Number(a.buCost) || 0,
+    cxCost: Number(a.cxCost) || 0,
+  }));
+}
+
 export function caseToIntakeFormValues(
-  c: Case & { attachments?: Pick<Attachment, "fileName" | "mimeType" | "sizeBytes">[] }
+  c: Case & {
+    attachments?: Pick<Attachment, "fileName" | "mimeType" | "sizeBytes">[];
+    assets?: CaseAsset[];
+  }
 ): CaseFormValues {
   return {
     ...caseIntakeDefaultValues,
@@ -19,21 +35,28 @@ export function caseToIntakeFormValues(
     requestType: c.requestType,
     priority: c.priority,
     customerName: c.customerName === "TBD" ? "" : c.customerName,
-    dealId: c.dealId === "TBD" ? "" : c.dealId,
-    platform: c.platform === "TBD" ? "" : c.platform,
-    softwareVersion: c.softwareVersion === "TBD" ? "" : c.softwareVersion,
+    dealId: !c.dealId || c.dealId === "TBD" ? "" : c.dealId,
     businessJustification: isDraftPlaceholderJustification(c.businessJustification)
       ? ""
       : c.businessJustification,
     extensionStartDate: isoDateOnly(c.extensionStartDate),
     extensionEndDate: isoDateOnly(c.extensionEndDate),
     migrationPlan: c.migrationPlan ?? undefined,
+    essSupportSubtype: c.essSupportSubtype ?? undefined,
+    migrationTimeline: c.migrationTimeline ?? undefined,
+    targetReplacementProduct: c.targetReplacementProduct ?? undefined,
+    hardwarePhysicalLocation: c.hardwarePhysicalLocation ?? undefined,
+    softwareDeploymentType: c.softwareDeploymentType ?? undefined,
+    softwareProductFamily: c.softwareProductFamily ?? undefined,
+    softwareOnPremise: c.softwareOnPremise ?? undefined,
+    softwarePerpetualLicense: c.softwarePerpetualLicense ?? undefined,
+    softwareIsApplicationSoftware: c.softwareIsApplicationSoftware ?? undefined,
+    softwareNotIosIosXr: c.softwareNotIosIosXr ?? undefined,
+    environmentIsProduction: c.environmentIsProduction ?? undefined,
+    essEligibilityAcknowledged: Boolean(c.essEligibilityAcknowledged),
     partnerName: c.partnerName ?? undefined,
     quantity: c.quantity ?? undefined,
-    eolBulletinLink: c.eolBulletinLink ?? undefined,
-    serialNumbers: c.serialNumbers ?? undefined,
     supportCoverageIndicator: c.supportCoverageIndicator ?? undefined,
-    hwLdosDate: isoDateOnly(c.hwLdosDate),
     notes: c.notes ?? undefined,
     attachments:
       c.attachments?.map((a) => ({
@@ -41,5 +64,6 @@ export function caseToIntakeFormValues(
         mimeType: a.mimeType ?? undefined,
         sizeBytes: a.sizeBytes ?? undefined,
       })) ?? [],
+    assets: assetsFromCase(c.assets),
   };
 }
