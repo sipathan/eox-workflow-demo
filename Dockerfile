@@ -28,6 +28,10 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/next.config.ts ./
+# `prisma db seed` runs `tsx prisma/seed.ts`, which imports `../src/...` (e.g. workflow task template strings).
+# Next.js production only needs `.next/`; seed needs TypeScript sources on disk — copy `src/` + tsconfig for tsx.
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/src ./src
 
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh

@@ -18,7 +18,7 @@
 - **Draft with no named platforms**: draft save stores **zero** `CaseAsset` rows until at least one card has a platform name; submit still requires **≥1** valid row with name (and EoVSS serials). UX now states this in the draft banner.
 - **Reports dashboard**: filters (GET **`requestType`**, aliases **`svc`** / **`service`**), bottlenecks, aging, and month bar trends are in place. UI uses **Service** / **service segmentation** with three buckets **EoVSS**, **EoSM**, **ESS/MSS** (Prisma **`ESS_MSS`**); legacy **`EoSS`** query values map to **`ESS_MSS`**. Optional follow-ups: a real **`closedAt`** (or activity-derived) timestamp for cycle time, richer charts (client library), date filter on close vs create as a second mode, and SQL-side aggregates at scale.
 - **Prisma 7**: deprecation notice for `package.json#prisma` — migrate to `prisma.config.ts` when upgrading.
-- **Postgres / Docker:** pilot uses `docker-compose.yml` + named volume; **`postgres` publishes `localhost:5432`** for local development (host Prisma / Next dev). Tighten image size (e.g. production-only deps, `standalone` output) if the deployment graduates beyond a single EC2 demo; consider **dropping the `ports:`** mapping on Postgres if a host must not expose the DB.
+- **Postgres / Docker:** pilot uses `docker-compose.yml` + named volume; **`postgres` publishes `localhost:5432`** for local development (host Prisma / Next dev). Runtime image includes **`src/`** for **`prisma db seed`** (`seed.ts` imports app modules). Tighten image size (e.g. production-only deps, `standalone` output, or seed-only `prisma/` modules) if the deployment graduates beyond a single EC2 demo; consider **dropping the `ports:`** mapping on Postgres if a host must not expose the DB.
 
 ## Docs
 

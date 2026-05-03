@@ -67,7 +67,7 @@
 - **Prisma** `datasource` is **PostgreSQL**; `DATABASE_URL` is the only connection string (local Postgres, Compose service `postgres`, or RDS later).
 - **Migrations:** SQLite-era migration folders were removed and replaced by a **single baseline** `prisma/migrations/20260530120000_init_postgresql` generated from the current `schema.prisma` (`prisma migrate diff --from-empty …`). New environments run **`prisma migrate deploy`** (Compose entrypoint runs this before `next start`).
 - **Runtime:** `Dockerfile` (multi-stage build) + `docker-compose.yml` (app + Postgres 16, named volume). Postgres publishes **`5432:5432`** for **host** access (Prisma / `npm run dev`); the **app** service still uses **`postgres:5432`** on the Compose network. **`docker-entrypoint.sh`**: `migrate deploy` → `npm run start`. Demo auth unchanged.
-- **Seed:** not run automatically in Compose; operators run `docker compose exec app npx prisma db seed` when they want demo data.
+- **Seed:** not run automatically in Compose; operators run `docker compose exec app npx prisma db seed` when they want demo data. The **runner** image includes **`src/`** and **`tsconfig.json`** (not needed for `next start`) so **`tsx prisma/seed.ts`** can resolve **`../src/lib/workflow/task-templates`**. Cleaner long-term: move shared seed strings into **`prisma/`** (no app import) or compile a seed bundle — deferred for pilot safety.
 
 ## Platform financials (demo USD)
 

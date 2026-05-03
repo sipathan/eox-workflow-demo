@@ -204,7 +204,7 @@ Users:
 - No dedicated admin console for role/team management yet
 - No audit export package; activity log is in-app
 - No automated end-to-end test suite yet
-- Docker image copies full `node_modules` from the build stage for simplicity (internal pilot); tighten for supply-chain/size if this graduates beyond a pilot
+- Docker image copies full `node_modules` from the build stage for simplicity (internal pilot). The runtime image also includes **`src/`** and **`tsconfig.json`** so **`docker compose exec app npx prisma db seed`** can resolve `prisma/seed.ts` imports from the repo (e.g. `src/lib/workflow/task-templates.ts`). Tighten for supply-chain/size if this graduates beyond a pilot
 
 ## Production Direction
 

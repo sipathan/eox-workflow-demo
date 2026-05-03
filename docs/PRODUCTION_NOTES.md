@@ -23,6 +23,7 @@ There is **no** `RequestType.EoSS` in the Prisma schema after migration; do not 
 This application is a **local prototype**. The following is **not** production-ready:
 
 - **PostgreSQL** is used for the app and for the **Docker Compose** pilot on EC2; the bundled Compose file is **not** production-hardened (no TLS to the DB inside the default compose network, default pilot passwords, single-node volume). Production would use a managed RDBMS, backups, rotation, and migration governance.
+- **Docker app image** ships **`src/`** (and **`tsconfig.json`**) in addition to **`.next/`** so **`prisma db seed`** works in-container (`seed.ts` imports under **`src/lib/`**). Production hardening might replace that with a seed-only artifact or CI job that does not embed application source in the runtime image.
 - **Local password login** — demo users in seed; no SSO, MFA, or enterprise directory.
 - **Session / cookies** — implement per your org’s security baseline before any real deployment.
 - **Task activation** — synchronous Prisma updates in a loop; acceptable at demo scale only.
