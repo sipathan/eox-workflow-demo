@@ -1,0 +1,36 @@
+# Internal pilot: app + Postgres on one host.
+# Postgres publishes 5432→5432 for host tools (Prisma CLI, `npm run dev`). The app service still uses hostname `postgres` on the Compose network.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eox
+      POSTGRES_PASSWORD: eox
+      POSTGRES_DB: eox_workflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eox -d eox_workflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://eox:eox@postgres:5432/eox_workflow?schema=public
+      NODE_ENV: production
+      # Override in a root `.env` file (loaded by Compose) for anything beyond an internal pilot.
+      SESSION_SECRET: ${SESSION_SECRET:-internal-pilot-replace-me-use-32-plus-char-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

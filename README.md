@@ -14,51 +14,135 @@ Leadership-ready demo for queue-driven EoX request management:
 ## Stack
 
 - Next.js App Router + TypeScript
-- Prisma ORM + SQLite
+- Prisma ORM + **PostgreSQL**
 - Tailwind CSS
 - React Hook Form + Zod
 - Recharts
 
-## Setup
+## Required environment variables
 
-1) Install dependencies
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection string for Prisma (see `.env.example`). |
+| `SESSION_SECRET` | Secret used to sign demo session cookies (**32+ characters** recommended for shared or EC2 hosts). |
 
-```bash
-npm install
-```
+Copy `.env.example` to `.env` and set values before running migrations or the app.
 
-2) Configure environment
+## Local development (without Docker for the app)
+
+1. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+2. **Run PostgreSQL** (install locally, or use only the DB from Docker Compose — see below).
+
+3. **Configure `.env`**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Point `DATABASE_URL` at your Postgres instance (same user/db/password as in `.env.example`, or your own).
+
+4. **Apply migrations**
+
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+   For iterative schema work you can use `npm run db:migrate` (`prisma migrate dev`) instead.
+
+5. **Seed demo data**
+
+   ```bash
+   npm run db:seed
+   ```
+
+6. **Run the dev server**
+
+   ```bash
+   npm run dev
+   ```
+
+   Open the **Local** URL printed in the terminal (often [http://localhost:3000](http://localhost:3000); the port may change if 3000 is busy). The dev script uses **`--hostname localhost`** so the server matches normal `http://localhost:…` requests. If you see **Home** with the sidebar but no **Demo sign-in** card, you still have a session cookie—try a private window or clear cookies for this site. A blank or refused page on port 3000 often means another process is using that port; use the URL and port from the terminal.
+
+## Docker Compose (app + Postgres)
+
+Use this for an **EC2 internal pilot** or any host with Docker and Docker Compose: one container runs **Next.js** in production mode, another runs **PostgreSQL 16**. Postgres data persists in a **named volume**. For **local development**, Postgres is also mapped **`5432:5432`** so tools on the host (Prisma CLI, `npm run dev`) can use `DATABASE_URL` with **`localhost:5432`**. The **app** container still uses the internal hostname **`postgres`** on the Compose network.
+
+### Prerequisites
+
+- Docker and Docker Compose v2
+- A root `.env` file (optional but recommended) with at least `SESSION_SECRET` set for non-throwaway pilots
+
+### Commands (local laptop or EC2)
+
+From the repository root:
 
 ```bash
 cp .env.example .env
+# Edit .env: set SESSION_SECRET (and anything else you need).
+
+docker compose up --build
 ```
 
-Set `SESSION_SECRET` to a 32+ character value.
+- **App:** [http://localhost:3000](http://localhost:3000) (host port **3000** → container **3000**).
+- On first start the **app** entrypoint runs **`npx prisma migrate deploy`**, then **`npm run start`** (production Next.js).
 
-3) Apply migrations
+### Initialize the database (Compose)
+
+Migrations run automatically when the app container starts. To load demo users and cases **once** (or after you reset the volume):
 
 ```bash
-npm run db:migrate
+docker compose exec app npx prisma db seed
 ```
 
-4) Seed demo data
+(`package.json` maps this to `tsx prisma/seed.ts`.)
+
+### Reset Postgres data (Compose, destructive)
+
+Removes the named volume and recreates an empty database on next `up`:
 
 ```bash
-npm run db:seed
+docker compose down -v
+docker compose up --build
+docker compose exec app npx prisma db seed
 ```
 
-5) Run development server
+### Run only Postgres locally (app still via `npm run dev`)
+
+If you want PostgreSQL in Docker but the Next app on the host:
 
 ```bash
-npm run dev
+docker compose up postgres -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Use `DATABASE_URL="postgresql://eox:eox@localhost:5432/eox_workflow?schema=public"` in `.env`, then `npx prisma migrate deploy` and `npm run db:seed` on the host.
+
+### EC2 (internal pilot)
+
+On the instance (Docker + Git already installed; Node not required on the host if you run only Compose):
+
+```bash
+git clone <YOUR_REPO_URL> eox-workflow-demo
+cd eox-workflow-demo
+cp .env.example .env
+# Set SESSION_SECRET to a strong value (minimum 32 characters — required for sign-in to work).
+nano .env   # or vi
+
+docker compose up --build -d
+docker compose exec app npx prisma db seed
+```
+
+Open **`http://<EC2_PUBLIC_IP>:3000`** in a browser (ensure the security group allows **TCP 3000** inbound, or put a reverse proxy in front and map ports accordingly). Demo login: see **Demo Login Credentials** below (`Demo123!`).
 
 ## Useful Commands
 
 ```bash
-npm run build        # production build
+npm run build        # prisma generate + next build
+npm run start        # production server (after build)
 npm run lint         # static lint checks
 npm run db:generate  # regenerate Prisma client
 npm run db:studio    # Prisma Studio
@@ -120,6 +204,7 @@ Users:
 - No dedicated admin console for role/team management yet
 - No audit export package; activity log is in-app
 - No automated end-to-end test suite yet
+- Docker image copies full `node_modules` from the build stage for simplicity (internal pilot); tighten for supply-chain/size if this graduates beyond a pilot
 
 ## Production Direction
 
@@ -149,3 +234,7 @@ This section describes the intended production evolution and is **separate** fro
 4) Open **New Request**:
    - save draft
    - submit and show queue routing into operations.
+
+## Migrations note (SQLite → PostgreSQL)
+
+Historical **SQLite-only** migration SQL was replaced by a **single PostgreSQL baseline** (`prisma/migrations/20260530120000_init_postgresql`) aligned with the current `schema.prisma`. Fresh Postgres databases should use `prisma migrate deploy` (or `migrate dev` during development). Do **not** point `migrate reset` at shared production databases.

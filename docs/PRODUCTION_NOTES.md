@@ -11,7 +11,7 @@
 ### Remaining **`EoSS`** string references (intentional)
 
 - **`src/lib/reports/reports-filters.ts`** — accepts legacy query value **`EoSS`** and maps it to **`ESS_MSS`** so old **`/reports?requestType=EoSS`** bookmarks keep working.
-- **`prisma/migrations/20260502003859_ess_mss_request_type/migration.sql`** — rewrites historical **`EoSS-…`** public case IDs to **`ESSMSS-…`** and enum **`EoSS`** → **`ESS_MSS`**.
+- **Historical note:** an older SQLite migration (removed when the repo rebased on PostgreSQL) rewrote **`EoSS-…`** public case IDs to **`ESSMSS-…`** and enum **`EoSS`** → **`ESS_MSS`**. Fresh Postgres installs use the current baseline only.
 - **Docs** (`PROJECT_CONTEXT.md`, `HANDOFF_CURRENT_STATE.md`, `IMPLEMENTATION_DECISIONS.md`, `OPEN_ITEMS.md`, this file) — mention **`EoSS`** only as **legacy / forbidden in new code**, not as a current product label.
 
 There is **no** `RequestType.EoSS` in the Prisma schema after migration; do not reintroduce it.
@@ -22,7 +22,7 @@ There is **no** `RequestType.EoSS` in the Prisma schema after migration; do not 
 
 This application is a **local prototype**. The following is **not** production-ready:
 
-- **SQLite** file database — fine for a laptop demo; production would use a managed RDBMS, backups, and migration governance.
+- **PostgreSQL** is used for the app and for the **Docker Compose** pilot on EC2; the bundled Compose file is **not** production-hardened (no TLS to the DB inside the default compose network, default pilot passwords, single-node volume). Production would use a managed RDBMS, backups, rotation, and migration governance.
 - **Local password login** — demo users in seed; no SSO, MFA, or enterprise directory.
 - **Session / cookies** — implement per your org’s security baseline before any real deployment.
 - **Task activation** — synchronous Prisma updates in a loop; acceptable at demo scale only.
@@ -30,27 +30,29 @@ This application is a **local prototype**. The following is **not** production-r
 - **Reports (`/reports`)** — in-memory aggregation over all cases visible to the user, then URL-driven filters. Fine for demo volumes; production would move rollups to SQL/OLAP, add indexed date columns (**`closedAt`**), cache, and pagination for filter option lists.
 - **UI consistency pass** — case list avoids duplicate rows between “My work” and the rest; home status chart deep-links to reports for report-capable roles; booking/financial client forms rely on **`key`** remounts instead of syncing props in **`useEffect`** (keeps React Compiler / ESLint clean). **Reports** and **case list** use **Service** / **ESS/MSS** display labels; Prisma field remains **`requestType`**. Case detail: **Deal ID** in **Case summary** only when populated; **Operations & assignment** snapshot uses trimmed Deal ID / routing note; **Status** not triple-shown (header vs summary vs ops).
 - **No enterprise BI** — beyond `/reports`, production would still use a dedicated analytics stack on top of **`CaseAsset`** and task models.
-- **Demo financials** — `buCost` / `cxCost` are `REAL` floats in SQLite, not a hardened ledger; use integers/minor units, currency metadata, and audit trails in any real deployment.
+- **Demo financials** — `buCost` / `cxCost` are floating-point columns in Postgres (`DOUBLE PRECISION` via Prisma `Float`), not a hardened ledger; use integers/minor units, currency metadata, and audit trails in any real deployment.
 
 ## If you ever harden this codebase
 
-- Replace SQLite; enforce TLS; externalize secrets; add observability, rate limits, and CSRF strategy consistent with your hosting.
+- Enforce TLS end-to-end; externalize secrets; add observability, rate limits, and CSRF strategy consistent with your hosting.
 - Revisit **`applyTaskActivationRules`** for idempotency and for whether `activatedAt` should be set only on the first transition to runnable.
 - Add automated tests for intake validation, task activation order, and RBAC on non-runnable tasks.
 
 ## Database reset (demo only)
 
-**SQLite `DATABASE_URL`:** Prisma resolves relative paths from the **`prisma/`** directory (where `schema.prisma` lives). Use **`file:./dev.db`** in `.env` so the database file is **`prisma/dev.db`** at the repo root. A value like **`file:./prisma/dev.db`** incorrectly resolves to **`prisma/prisma/dev.db`**, which is easy to leave empty while migrations/seeds target a different file — the app then shows **no cases**.
+**PostgreSQL `DATABASE_URL`:** must be a full connection string (see `.env.example`). For **Docker Compose**, the **app** service receives `DATABASE_URL` pointing at the **`postgres`** service on the internal network. The **`postgres`** service also publishes **`localhost:5432`** on the host for local tooling (`prisma`, `npm run dev`); remove that mapping on hardened hosts if the DB must not be reachable from outside the container network.
 
-For developers:
+For developers on a **throwaway** local database:
 
 ```bash
 npx prisma migrate reset
 ```
 
-This **drops** the SQLite database, reapplies all migrations, and runs `prisma/seed.ts`. Use when schema or seed changed and you want a clean slate. **Do not** use `migrate reset` against a shared or production database.
+This **drops** all objects in the target database schema, reapplies migrations, and runs `prisma/seed.ts`. **Do not** use `migrate reset` against a shared or production database.
 
-After pulls that change **seed copy** (EoSM terminology, optional partner rows) or **Prisma `///` comments** only, you can run **`npm run db:seed`** if the DB already exists and you want refreshed demo rows without a full reset; use **`migrate reset`** when you also need a clean file DB or applied migrations changed.
+**Docker Compose:** to wipe data and start fresh, `docker compose down -v` removes the named Postgres volume; bring the stack up again, then run **`docker compose exec app npx prisma db seed`**.
+
+After pulls that change **seed copy** only, you can run **`npm run db:seed`** (or **`docker compose exec app npx prisma db seed`**) if migrations are already applied and you only want refreshed demo rows.
 
 **Reports / intake UI wording**: filters, segmentation, **Create request** step 0, intake review, and **case summary** use the **Service** label for the three buckets (**EoVSS · EoSM · ESS/MSS**). **EoSM** is still documented everywhere as **End of Software Maintenance** (not service migration). Wire / Prisma field remains **`requestType`**.
 

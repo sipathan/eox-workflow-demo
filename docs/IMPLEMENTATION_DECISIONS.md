@@ -60,11 +60,18 @@
 
 ## Demo vs production
 
-- Activation logic is intentionally small and synchronous (re-read tasks in a short loop). Good enough for SQLite demo; production would likely use explicit workflow state or a rules engine.
+- Activation logic is intentionally small and synchronous (re-read tasks in a short loop). Good enough for demo-scale Postgres; production would likely use explicit workflow state or a rules engine.
+
+## PostgreSQL + Docker Compose (internal pilot)
+
+- **Prisma** `datasource` is **PostgreSQL**; `DATABASE_URL` is the only connection string (local Postgres, Compose service `postgres`, or RDS later).
+- **Migrations:** SQLite-era migration folders were removed and replaced by a **single baseline** `prisma/migrations/20260530120000_init_postgresql` generated from the current `schema.prisma` (`prisma migrate diff --from-empty …`). New environments run **`prisma migrate deploy`** (Compose entrypoint runs this before `next start`).
+- **Runtime:** `Dockerfile` (multi-stage build) + `docker-compose.yml` (app + Postgres 16, named volume). Postgres publishes **`5432:5432`** for **host** access (Prisma / `npm run dev`); the **app** service still uses **`postgres:5432`** on the Compose network. **`docker-entrypoint.sh`**: `migrate deploy` → `npm run start`. Demo auth unchanged.
+- **Seed:** not run automatically in Compose; operators run `docker compose exec app npx prisma db seed` when they want demo data.
 
 ## Platform financials (demo USD)
 
-- **`CaseAsset.buCost`** and **`CaseAsset.cxCost`** are stored as non-negative **Float** (SQLite `REAL`); demo treats values as **USD** with two decimal display via `formatUsd2` (`src/lib/ui/format.ts`).
+- **`CaseAsset.buCost`** and **`CaseAsset.cxCost`** are stored as non-negative **Float** (PostgreSQL `DOUBLE PRECISION`); demo treats values as **USD** with two decimal display via `formatUsd2` (`src/lib/ui/format.ts`).
 - **Line total** is never stored: **`platformTotalCost(bu, cx)`** = `roundMoney2(bu) + roundMoney2(cx)` in `src/lib/cases/financials.ts`.
 - **Case rollups** (`totalBuCost`, `totalCxCost`, `totalQuoteValue`) are **derived** in app code with **`rollupCaseFinancials`** over the case’s assets (sum of rounded line totals for `totalQuoteValue`).
 - **Intake**: optional per-row costs in `caseAssetRowSchema`; **`suggestedCxCostFromBu`** (43% of BU, rounded) is exposed only as a **button** on new request — not enforced server-side.

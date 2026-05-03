@@ -1,21 +1,23 @@
 # Handoff — current state
 
-Last updated: 2026-04-30 (quantity is **per `CaseAsset`**; **Case summary** shows **Total units (qty)** = sum of set per-line quantities, **—** when none. **Platforms & equipment** table column **Quantity**. Intake partner block is partner-only. Migration **`20260530191500_quantity_on_case_asset`** backfills legacy case-level quantity to the **first** asset row by `sortOrder` only.)
+Last updated: 2026-04-30 (**PostgreSQL** + Docker Compose pilot; Prisma baseline migration **`20260530120000_init_postgresql`**. Quantity is **per `CaseAsset`**; **Case summary** shows **Total units (qty)** = sum of set per-line quantities, **—** when none. **Platforms & equipment** table column **Quantity**. Intake partner block is partner-only.)
 
 ## What this repo is
 
-Local Next.js + Prisma + SQLite demo for **EoVSS** / **EoSM** / **ESS/MSS** workflow (see `docs/PROJECT_CONTEXT.md`). Third bucket in code is **`RequestType.ESS_MSS`** (UI label **ESS/MSS**); public case IDs use prefix **`ESSMSS`**. **EoSM** = **End of Software Maintenance** (not Service Migration). **EoSM** marks the end of regular software maintenance / routine bug fixes; **security fixes** may continue per **EoVS / EoVSS** policy depending on product.
+Local Next.js + Prisma + **PostgreSQL** demo for **EoVSS** / **EoSM** / **ESS/MSS** workflow (see `docs/PROJECT_CONTEXT.md`). Third bucket in code is **`RequestType.ESS_MSS`** (UI label **ESS/MSS**); public case IDs use prefix **`ESSMSS`**. **EoSM** = **End of Software Maintenance** (not Service Migration). **EoSM** marks the end of regular software maintenance / routine bug fixes; **security fixes** may continue per **EoVS / EoVSS** policy depending on product.
+
+**EC2 / Docker pilot:** `Dockerfile` + `docker-compose.yml` run **Next.js (production)** and **Postgres 16**; app entrypoint runs **`prisma migrate deploy`** then **`next start`**. Postgres uses a named volume and is published as **`5432:5432`** so **host** tools (e.g. `npx prisma`, `npm run dev` with `DATABASE_URL=...@localhost:5432/...`) work alongside the **app** container, which still connects via **`postgres:5432`** on the Compose network. For a locked-down server-only deploy, remove or override the `ports:` mapping. See **`README.md`** for env vars and exact commands.
 
 ## Data model (high level)
 
 - **Case**: `dealId` is optional (`null` allowed). **`partnerName`** is optional for **all** request types (**EoVSS**, **EoSM**, **`ESS_MSS`**): never required on **submit** or on **other case mutations** (routing, booking, financials, tasks, etc.). Missing partner name **must not** block request creation or case updates. **`quoteBookingStatus`** (`OPEN`, `BOOKED`, `NOT_BOOKED`, `PASSED_OVER`) and optional **`notBookedReason`** (required in validation when status is `NOT_BOOKED` or `PASSED_OVER`; cleared when returning to `OPEN` / `BOOKED`). Legacy `platform` / `softwareVersion` / `serialNumbers` / `eolBulletinLink` / `hwLdosDate` remain on `Case` for backward compatibility but new intake writes **null** there; live data uses **CaseAsset** rows.
 - **ESS/MSS (`ESS_MSS`)**: `essSupportSubtype` (`EssMssSupportSubtype`: hardware / software / both). Extra scalars: `migrationPlan` (required text on submit for this type), `migrationTimeline`, `targetReplacementProduct`, `hardwarePhysicalLocation`, `softwareDeploymentType`, `softwareProductFamily`, booleans for software eligibility signals (`softwareOnPremise`, `softwarePerpetualLicense`, `softwareIsApplicationSoftware`, `softwareNotIosIosXr`), `environmentIsProduction`, `essEligibilityAcknowledged`. MSS-specific workflow is **not** implemented yet; flags support review UX without hard-blocking product rules.
-- **CaseAsset**: One row per platform/SKU line (`platformName`, `serialNumbers`, `eolBulletinLink`, `hwLdosDate`, `softwareVersion`, optional **`quantity`** (non-negative int when set), `sortOrder`, **`buCost`**, **`cxCost`** as demo USD floats). **Line total** = BU + CX via `platformTotalCost` in `src/lib/cases/financials.ts` (not stored). Case-level **rollups** use `rollupCaseFinancials` (same file). Migrations: `20260501030740_financials_booking`, `20260530191500_quantity_on_case_asset`.
+- **CaseAsset**: One row per platform/SKU line (`platformName`, `serialNumbers`, `eolBulletinLink`, `hwLdosDate`, `softwareVersion`, optional **`quantity`** (non-negative int when set), `sortOrder`, **`buCost`**, **`cxCost`** as demo USD floats). **Line total** = BU + CX via `platformTotalCost` in `src/lib/cases/financials.ts` (not stored). Case-level **rollups** use `rollupCaseFinancials` (same file). Schema history lived in SQLite-era migrations; **current** DB baseline for Postgres is **`20260530120000_init_postgresql`** (single migration folder).
 - **Task**: `caseAssetId` (optional), `isRunnable`, `activatedAt`, optional **`notes`** (ESS/MSS eligibility rows ship template text here). Default submitted rows: **`buildSubmittedCaseTaskRows`** in **`src/lib/workflow/task-templates.ts`** (request-type + **`essSupportSubtype`** aware). Activation after edits: **`applyTaskActivationRules`** in **`src/lib/workflow/task-activation.ts`** (called from **`src/app/actions/case-workspace.ts`** after task updates).
 
 ## Public case ID
 
-Format: **`{TYPE_TOKEN}-{YYYY}-{SUFFIX}`** where **`TYPE_TOKEN`** is derived from `RequestType` via **`publicCaseIdTypeToken`** in `src/lib/cases/case-id-prefix.ts`: **`EoVSS`**, **`EoSM`**, and **`ESSMSS`** (for enum **`ESS_MSS`** — no slash in IDs). Suffix is random hex (demo-safe uniqueness). Implemented in `generateUniqueCaseId` in `src/app/actions/cases.ts`. Migration `20260502003859_ess_mss_request_type` rewrites legacy **`EoSS-…`** IDs to **`ESSMSS-…`** and enum **`EoSS`** → **`ESS_MSS`**.
+Format: **`{TYPE_TOKEN}-{YYYY}-{SUFFIX}`** where **`TYPE_TOKEN`** is derived from `RequestType` via **`publicCaseIdTypeToken`** in `src/lib/cases/case-id-prefix.ts`: **`EoVSS`**, **`EoSM`**, and **`ESSMSS`** (for enum **`ESS_MSS`** — no slash in IDs). Suffix is random hex (demo-safe uniqueness). Implemented in `generateUniqueCaseId` in `src/app/actions/cases.ts`. Legacy SQLite migrations once rewrote **`EoSS-…`** → **`ESSMSS-…`**; fresh Postgres installs from the current baseline only ever store **`ESS_MSS`** / **`ESSMSS-…`**.
 
 ## Intake UI (New request)
 
@@ -76,10 +78,11 @@ Format: **`{TYPE_TOKEN}-{YYYY}-{SUFFIX}`** where **`TYPE_TOKEN`** is derived fro
 
 ## Commands after pull
 
-1. `npx prisma migrate dev` — apply pending migrations (or `npx prisma migrate reset` for a **destructive** clean SQLite DB + rerun seed). If your local DB reports **migration checksum / drift** errors, **`migrate reset`** is the reliable fix for this demo.
-2. `npm run db:seed` to load demo data after reset (see `package.json`).
+1. Ensure **PostgreSQL** is running and `DATABASE_URL` in `.env` points at it (see `.env.example`).
+2. `npx prisma migrate deploy` — apply migrations (recommended for CI/EC2 and local parity). For local iterative schema work, `npm run db:migrate` (`prisma migrate dev`) is fine.
+3. `npm run db:seed` — load demo users and cases when the database is empty or you want refreshed seed rows (see `package.json`).
 
-For a **clean demo** on SQLite, `migrate reset` is acceptable; it drops all data and reapplies migrations + seed.
+**Docker Compose:** `docker compose up --build` runs migrations on app startup; seed with `docker compose exec app npx prisma db seed`. **`migrate reset`** is still destructive and acceptable **only** on throwaway local DBs — never on shared or production Postgres.
 
 ## Consistency audit (ESS/MSS + EoSM + optional partner fields)
 
