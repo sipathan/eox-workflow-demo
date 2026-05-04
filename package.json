@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname localhost",
+    "dev:clean": "rm -f .next/dev/lock && next dev --hostname localhost",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",

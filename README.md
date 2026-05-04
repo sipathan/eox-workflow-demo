@@ -68,6 +68,16 @@ Copy `.env.example` to `.env` and set values before running migrations or the ap
 
    Open the **Local** URL printed in the terminal (often [http://localhost:3000](http://localhost:3000); the port may change if 3000 is busy). The dev script uses **`--hostname localhost`** so the server matches normal `http://localhost:…` requests. If you see **Home** with the sidebar but no **Demo sign-in** card, you still have a session cookie—try a private window or clear cookies for this site. A blank or refused page on port 3000 often means another process is using that port; use the URL and port from the terminal.
 
+   **Stuck / “Another next dev server is already running”:** stop every listener on the dev ports, remove the stale lock, then start once:
+
+   ```bash
+   for port in 3000 3001; do pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN); [ -n "$pids" ] && kill $pids; done
+   rm -f .next/dev/lock
+   npm run dev
+   ```
+
+   Or use **`npm run dev:clean`** (clears `.next/dev/lock` only — still kill stray `node` processes on 3000/3001 if ports stay busy).
+
 ## Docker Compose (app + Postgres)
 
 Use this for an **EC2 internal pilot** or any host with Docker and Docker Compose: one container runs **Next.js** in production mode, another runs **PostgreSQL 16**. Postgres data persists in a **named volume**. For **local development**, Postgres is also mapped **`5432:5432`** so tools on the host (Prisma CLI, `npm run dev`) can use `DATABASE_URL` with **`localhost:5432`**. The **app** container still uses the internal hostname **`postgres`** on the Compose network.

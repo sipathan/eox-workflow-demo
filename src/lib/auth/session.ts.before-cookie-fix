@@ -76,18 +76,10 @@ export async function setSessionCookie(userId: string): Promise<boolean> {
   const token = signSessionToken(userId);
   if (!token) return false;
   const jar = await cookies();
-const rawSameSite = (process.env.COOKIE_SAME_SITE || "lax").toLowerCase();
-
-const cookieSameSite =
-  rawSameSite === "strict" || rawSameSite === "none" || rawSameSite === "lax"
-    ? (rawSameSite as "lax" | "strict" | "none")
-    : "lax";
-
-const cookieSecure = process.env.COOKIE_SECURE === "true";
   jar.set(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: cookieSameSite,
-    secure: cookieSecure,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
