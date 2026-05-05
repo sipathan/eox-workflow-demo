@@ -56,7 +56,6 @@ export const addAttachmentMetadataSchema = z.object({
 export const createTaskSchema = z.object({
   caseId: z.string().min(1),
   type: z.nativeEnum(TaskType),
-  ownerId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   assignedTeamId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   dueDate: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   notes: z.string().max(4000).optional().transform((s) => s?.trim() || undefined),
@@ -66,7 +65,6 @@ export const updateTaskSchema = z.object({
   caseId: z.string().min(1),
   taskId: z.string().min(1),
   status: z.nativeEnum(TaskStatus),
-  ownerId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   assignedTeamId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   dueDate: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
   isRequired: z.preprocess((v) => v === "true" || v === true, z.boolean()),

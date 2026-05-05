@@ -24,7 +24,7 @@ This application is a **local prototype**. The following is **not** production-r
 
 - **PostgreSQL** is used for the app and for the **Docker Compose** pilot on EC2; the bundled Compose file is **not** production-hardened (no TLS to the DB inside the default compose network, default pilot passwords, single-node volume). Production would use a managed RDBMS, backups, rotation, and migration governance.
 - **Docker app image** ships **`src/`** (and **`tsconfig.json`**) in addition to **`.next/`** so **`prisma db seed`** works in-container (`seed.ts` imports under **`src/lib/`**). Production hardening might replace that with a seed-only artifact or CI job that does not embed application source in the runtime image.
-- **Local password login** — demo users in seed; no SSO, MFA, or enterprise directory.
+- **Local password login** — demo users in seed; **`demoLoginAction`** checks an explicit allow list (**`src/lib/auth/demo-accounts.ts`**) and verifies **`bcrypt`** against **`User.passwordHash`** (no SSO, MFA, or enterprise directory).
 - **Session / cookies** — implement per your org’s security baseline before any real deployment.
 - **Task activation** — synchronous Prisma updates in a loop; acceptable at demo scale only.
 - **No real integrations** — quote/VAP/APAS references are metadata only.
@@ -49,7 +49,9 @@ For developers on a **throwaway** local database:
 npx prisma migrate reset
 ```
 
-This **drops** all objects in the target database schema, reapplies migrations, and runs `prisma/seed.ts`. **Do not** use `migrate reset` against a shared or production database.
+This **drops** all objects in the target database schema, reapplies migrations (**including `TaskAssignee` via `20260531120000_task_assignees`**), and runs `prisma/seed.ts`. **Do not** use `migrate reset` against a shared or production database.
+
+**EC2 / CI:** run **`npx prisma migrate deploy`** so every environment applies **`20260531120000_task_assignees`** before app traffic; the migration backfills **`TaskAssignee`** from existing **`Task.ownerId`** rows.
 
 **Docker Compose:** to wipe data and start fresh, `docker compose down -v` removes the named Postgres volume; bring the stack up again, then run **`docker compose exec app npx prisma db seed`**.
 

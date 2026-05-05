@@ -10,29 +10,42 @@ import {
 } from "@/lib/home/worklists";
 import { CaseStatusDistribution } from "@/components/home/CaseStatusDistribution";
 import { HomeWorkSection } from "@/components/home/HomeWorkSection";
-import { isReadOnlyDemoUser } from "@/lib/rbac";
+import { isPortfolioWideCaseViewer, isReadOnlyDemoUser } from "@/lib/rbac";
 
 const LIST_CAP = 10;
 
 type Props = {
   user: SessionUser;
   visibleCases: CaseListRow[];
-  /** When true, each status row in the distribution chart links to `/reports?status=…`. */
-  linkStatusChartToReports?: boolean;
+  /** Status chart links: Reports for ops roles; Cases list for users without Reports so counts stay drillable. */
+  statusBarLinkTarget: "reports" | "cases";
 };
 
-export function HomeWorkDashboard({ user, visibleCases, linkStatusChartToReports = false }: Props) {
-  const myActive = dedupeCasesById(filterMyActiveCases(user, visibleCases)).slice(0, LIST_CAP);
-  const awaiting = dedupeCasesById(filterCasesAwaitingMyInput(user, visibleCases)).slice(0, LIST_CAP);
-  const returned = dedupeCasesById(filterCasesReturnedForMoreInformation(user, visibleCases)).slice(0, LIST_CAP);
+function capNote(total: number): string {
+  if (total <= LIST_CAP) return "";
+  return ` Showing ${LIST_CAP} of ${total}; open Cases for the full list.`;
+}
+
+export function HomeWorkDashboard({ user, visibleCases, statusBarLinkTarget }: Props) {
+  const portfolioWide = isPortfolioWideCaseViewer(user);
+  const myActiveAll = dedupeCasesById(filterMyActiveCases(user, visibleCases));
+  const awaitingAll = dedupeCasesById(filterCasesAwaitingMyInput(user, visibleCases));
+  const returnedAll = dedupeCasesById(filterCasesReturnedForMoreInformation(user, visibleCases));
+  const myActive = myActiveAll.slice(0, LIST_CAP);
+  const awaiting = awaitingAll.slice(0, LIST_CAP);
+  const returned = returnedAll.slice(0, LIST_CAP);
   const distribution: StatusCount[] = caseStatusDistribution(visibleCases);
   const readOnly = isReadOnlyDemoUser(user);
 
   return (
     <div className="space-y-6">
       <HomeWorkSection
-        title="My active cases"
-        description="Non-closed work you are tied to — drafts you own, pipeline cases you follow, or the full operational portfolio when you run CX, admin, or leadership views."
+        title={portfolioWide ? "Active cases (portfolio)" : "My active cases"}
+        description={
+          (portfolioWide
+            ? "Non-terminal cases across the full portfolio visible to CX / admin / leadership. Counts match the status chart and case list."
+            : "Non-closed cases you are tied to — requester, direct assignee, or task queue. Counts match what you can open on the Cases page.") + capNote(myActiveAll.length)
+        }
         cases={myActive}
         emptyLabel="No active cases in your view right now."
       />
@@ -40,9 +53,11 @@ export function HomeWorkDashboard({ user, visibleCases, linkStatusChartToReports
       <HomeWorkSection
         title="Cases awaiting my input"
         description={
-          readOnly
+          (readOnly
             ? "Read-only accounts see portfolio lists elsewhere; actionable task queues are hidden here by design."
-            : "Runnable tasks you are allowed to update (owned, team queue, or CX/admin coverage) that are not yet completed."
+            : portfolioWide
+              ? "Runnable tasks your role may update anywhere in the visible portfolio (CX / admin)."
+              : "Runnable tasks you may update on your visible cases only (assignee, team queue, or allowed unowned queue work).") + (readOnly ? "" : capNote(awaitingAll.length))
         }
         cases={readOnly ? [] : awaiting}
         emptyLabel={
@@ -52,12 +67,19 @@ export function HomeWorkDashboard({ user, visibleCases, linkStatusChartToReports
 
       <HomeWorkSection
         title="Cases returned for more information"
-        description="Case status is Awaiting Info, or an Additional Info Request task is active and relevant to your role."
+        description={
+          "Awaiting Info in your scope, or an active Additional Info Request task relevant to your role." +
+          capNote(returnedAll.length)
+        }
         cases={returned}
         emptyLabel="No cases are waiting on more information in your view."
       />
 
-      <CaseStatusDistribution distribution={distribution} linkRowsToReports={linkStatusChartToReports} />
+      <CaseStatusDistribution
+        distribution={distribution}
+        statusBarLinkTarget={statusBarLinkTarget}
+        viewerScope={portfolioWide ? "portfolio" : "scoped"}
+      />
     </div>
   );
 }

@@ -1,8 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { CaseStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canViewCase, type CaseAccessRow } from "@/lib/rbac";
 import type { SessionUser } from "@/lib/auth/session";
+import { buildCaseAccessRow } from "@/lib/permissions/case-access-projection";
+import { canViewCase, hasAnyRole, isPlatformAdmin, type CaseAccessRow } from "@/lib/rbac";
+import { RoleKey } from "@prisma/client";
+import { userHasOperationalTaskTie } from "@/lib/tasks/direct-assignees";
 
 const caseListInclude = {
   requester: { select: { id: true, name: true, email: true } },
@@ -16,6 +19,7 @@ const caseListInclude = {
       ownerId: true,
       assignedTeamId: true,
       assignedTeam: { select: { id: true, name: true } },
+      assignees: { select: { userId: true } },
       status: true,
       type: true,
       isRequired: true,
@@ -29,13 +33,7 @@ const caseListInclude = {
 export type CaseListRow = Prisma.CaseGetPayload<{ include: typeof caseListInclude }>;
 
 function visibilityRow(row: CaseListRow): CaseAccessRow {
-  return {
-    requesterId: row.requesterId,
-    ownerId: row.ownerId,
-    assignedTeamId: row.assignedTeamId,
-    taskOwnerIds: row.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
-    taskTeamIds: row.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
-  };
+  return buildCaseAccessRow(row, row.tasks);
 }
 
 export async function listCasesVisibleToUser(user: SessionUser): Promise<CaseListRow[]> {
@@ -55,7 +53,14 @@ export async function getCaseByIdForUser(
     owner: true;
     assignedTeam: true;
     assets: true;
-    tasks: { include: { owner: true; assignedTeam: true; caseAsset: true } };
+    tasks: {
+      include: {
+        owner: true;
+        assignedTeam: true;
+        caseAsset: true;
+        assignees: { include: { user: { select: { id: true; name: true; email: true } } } };
+      };
+    };
     comments: { include: { user: true }; orderBy: { createdAt: "desc" } };
     activities: { include: { user: true }; orderBy: { createdAt: "desc" } };
     references: true;
@@ -69,7 +74,14 @@ export async function getCaseByIdForUser(
       owner: true,
       assignedTeam: true,
       assets: { orderBy: { sortOrder: "asc" } },
-      tasks: { include: { owner: true, assignedTeam: true, caseAsset: true } },
+      tasks: {
+        include: {
+          owner: true,
+          assignedTeam: true,
+          caseAsset: true,
+          assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+        },
+      },
       comments: { include: { user: true }, orderBy: { createdAt: "desc" } },
       activities: { include: { user: true }, orderBy: { createdAt: "desc" } },
       references: true,
@@ -77,26 +89,26 @@ export async function getCaseByIdForUser(
     },
   });
   if (!row) return null;
-  const vis = {
-    requesterId: row.requesterId,
-    ownerId: row.ownerId,
-    assignedTeamId: row.assignedTeamId,
-    taskOwnerIds: row.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
-    taskTeamIds: row.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
-  };
+  const vis = buildCaseAccessRow(row, row.tasks);
   if (!canViewCase(user, vis)) return null;
   return row;
 }
 
+/**
+ * Subset of already-visible cases for “My work” on `/cases`.
+ * Matches visibility policy: creator or task involvement; CX / admin / leadership see the full visible portfolio.
+ */
 export function myWorkCases(user: SessionUser, rows: CaseListRow[]): CaseListRow[] {
+  if (
+    isPlatformAdmin(user) ||
+    hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.LEADERSHIP_READONLY])
+  ) {
+    return rows;
+  }
+  const teamIds = new Set(user.teams.map((t) => t.id));
   return rows.filter((r) => {
-    if (r.ownerId === user.id) return true;
     if (r.requesterId === user.id) return true;
-    const teamIds = new Set(user.teams.map((t) => t.id));
-    if (r.assignedTeamId && teamIds.has(r.assignedTeamId)) return true;
-    return r.tasks.some(
-      (t) => t.ownerId === user.id || (!!t.assignedTeamId && teamIds.has(t.assignedTeamId))
-    );
+    return r.tasks.some((t) => userHasOperationalTaskTie(user.id, teamIds, t));
   });
 }
 
@@ -122,6 +134,7 @@ const reportsCaseInclude = {
     select: {
       ownerId: true,
       assignedTeamId: true,
+      assignees: { select: { userId: true } },
       type: true,
       status: true,
       isRunnable: true,
@@ -134,13 +147,7 @@ const reportsCaseInclude = {
 export type CaseReportsRow = Prisma.CaseGetPayload<{ include: typeof reportsCaseInclude }>;
 
 function visibilityFromReportsRow(row: CaseReportsRow): CaseAccessRow {
-  return {
-    requesterId: row.requesterId,
-    ownerId: row.ownerId,
-    assignedTeamId: row.assignedTeamId,
-    taskOwnerIds: row.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
-    taskTeamIds: row.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
-  };
+  return buildCaseAccessRow(row, row.tasks);
 }
 
 export async function listCasesForReports(user: SessionUser): Promise<CaseReportsRow[]> {

@@ -27,6 +27,8 @@ services:
       NODE_ENV: production
       # Override in a root `.env` file (loaded by Compose) for anything beyond an internal pilot.
       SESSION_SECRET: ${SESSION_SECRET:-internal-pilot-replace-me-use-32-plus-char-secret}
+      # `true` enables dashboard demo persona switcher (pilot only). Default: disabled.
+      DEMO_MODE: ${DEMO_MODE:-}
     depends_on:
       postgres:
         condition: service_healthy

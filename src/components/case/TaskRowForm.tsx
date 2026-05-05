@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TaskStatus } from "@prisma/client";
+import { TaskAssigneesEditor } from "@/components/case/TaskAssigneesEditor";
 import { formatTaskStatus } from "@/lib/ui/format";
 
 type Props = {
@@ -14,12 +15,12 @@ type Props = {
   canManageAssignments: boolean;
   users: { id: string; name: string }[];
   teams: { id: string; name: string }[];
-  defaultOwnerId: string | null;
+  /** Selected user ids for `TaskAssignee` (order preserved; first becomes legacy `ownerId` on save). */
+  defaultAssigneeUserIds: string[];
   defaultTeamId: string | null;
   defaultDue: string;
   defaultIsRequired: boolean;
   taskStatuses: TaskStatus[];
-  ownershipCaption?: string;
   showTeamQueueHint?: boolean;
 };
 
@@ -34,11 +35,10 @@ export function TaskRowForm({
   canManageAssignments,
   users,
   teams,
-  defaultOwnerId,
+  defaultAssigneeUserIds,
   defaultTeamId,
   defaultDue,
   defaultIsRequired,
-  ownershipCaption,
   showTeamQueueHint,
 }: Props) {
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
@@ -61,24 +61,18 @@ export function TaskRowForm({
           ))}
         </select>
       </td>
-      <td className="px-3 py-2 text-slate-600">
-        <select
-          form={formId}
-          name="ownerId"
-          defaultValue={defaultOwnerId ?? ""}
+      <td className="max-w-[17rem] min-w-0 px-3 py-2 align-top text-slate-600">
+        <TaskAssigneesEditor
+          key={`${formId}:${defaultAssigneeUserIds.join("|")}`}
+          formId={formId}
+          users={users}
+          defaultSelectedIds={defaultAssigneeUserIds}
           disabled={!canManageAssignments}
-          className="w-40 rounded-md border border-slate-300 px-2 py-1 text-xs"
-        >
-          <option value="">—</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </select>
-        {ownershipCaption ? <div className="mt-1 text-[10px] text-slate-500">{ownershipCaption}</div> : null}
+          compact
+          showSharedTaskHint={false}
+        />
         {showTeamQueueHint ? (
-          <div className="text-[10px] text-emerald-700">Team queue: you can act without individual owner.</div>
+          <div className="mt-1.5 text-[10px] text-emerald-700">Team queue: you can act without individual assignees.</div>
         ) : null}
       </td>
       <td className="px-3 py-2 text-slate-600">
@@ -119,7 +113,7 @@ export function TaskRowForm({
           <option value="false">No</option>
         </select>
       </td>
-      <td className="px-3 py-2 text-slate-600">
+      <td className="max-w-[14rem] min-w-0 px-3 py-2 text-slate-600">
         <div className="space-y-1">
           <textarea
             form={formId}
@@ -127,7 +121,7 @@ export function TaskRowForm({
             rows={2}
             defaultValue={defaultNotes}
             disabled={!canEditTask}
-            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+            className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-1 text-xs"
           />
           {status === TaskStatus.Blocked ? (
             <textarea

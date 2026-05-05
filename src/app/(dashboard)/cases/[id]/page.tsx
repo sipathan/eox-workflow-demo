@@ -25,6 +25,8 @@ import {
 } from "@/app/actions/case-workspace";
 import { BookingOutcomeForm } from "@/components/case/BookingOutcomeForm";
 import { PlatformAssetCostEditor } from "@/components/case/PlatformAssetCostEditor";
+import { TaskAssigneeChips } from "@/components/case/TaskAssigneeChips";
+import { TaskAssigneesEditor } from "@/components/case/TaskAssigneesEditor";
 import { TaskRowForm } from "@/components/case/TaskRowForm";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -41,6 +43,7 @@ import {
 } from "@/lib/rbac";
 import { rollupCaseFinancials, totalQuantityFromAssets } from "@/lib/cases/financials";
 import {
+  formatActivityAction,
   formatCaseStatus,
   formatEssMssSupportSubtype,
   formatQuoteBookingStatus,
@@ -52,9 +55,11 @@ import {
 import { daysActiveDisplay, sortCaseTasksForDisplay, taskWorkItemLabel } from "@/lib/workflow/task-display";
 import {
   assignedTeamFallbackLabelForCase,
+  orderedTaskAssigneesForDisplay,
   ownershipDisplayForCase,
-  ownershipDisplayForTask,
 } from "@/lib/workflow/assignment-display";
+import { buildCaseAccessRow } from "@/lib/permissions/case-access-projection";
+import { mergedDirectAssigneeUserIds } from "@/lib/tasks/direct-assignees";
 
 function parseFlash(
   searchParams: { flash?: string; tone?: string } | undefined
@@ -122,15 +127,14 @@ function toCaseAccessRow(c: {
   requesterId: string;
   ownerId: string | null;
   assignedTeamId: string | null;
-  tasks: { ownerId: string | null; assignedTeamId: string | null }[];
+  tasks: {
+    ownerId: string | null;
+    assignedTeamId: string | null;
+    status: TaskStatus;
+    assignees: { userId: string }[];
+  }[];
 }): CaseAccessRow {
-  return {
-    requesterId: c.requesterId,
-    ownerId: c.ownerId,
-    assignedTeamId: c.assignedTeamId,
-    taskOwnerIds: c.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
-    taskTeamIds: c.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
-  };
+  return buildCaseAccessRow(c, c.tasks);
 }
 
 export default async function CaseDetailPage(props: {
@@ -663,11 +667,12 @@ export default async function CaseDetailPage(props: {
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">Workflow / tasks</h2>
         <p className="mt-1 max-w-3xl text-xs text-slate-600">
-          Work items and progress for this case (BU Review / BU Pricing are listed once per platform). Task assignment
-          here is separate from <strong>Operations &amp; assignment</strong> at the top of this page. Inactive tasks show{" "}
-          <strong>Not active</strong> in # Days active until upstream work completes.{" "}
-          <strong>Platform financials</strong> (per line) follow, then <strong>Booking outcome</strong>. Case-level
-          financial roll-up is in <strong>Case summary</strong>.
+          Work items and progress for this case (BU Review / BU Pricing are listed once per platform). Each row is one
+          shared task: multiple assignees see the same status and notes; CX Ops / Platform Admin can add or remove
+          assignees where permitted. Task routing here is separate from <strong>Operations &amp; assignment</strong> at
+          the top of this page. Inactive tasks show <strong>Not active</strong> in # Days active until upstream work
+          completes. <strong>Platform financials</strong> (per line) follow, then <strong>Booking outcome</strong>.
+          Case-level financial roll-up is in <strong>Case summary</strong>.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -675,7 +680,7 @@ export default async function CaseDetailPage(props: {
               <tr>
                 <th className="px-3 py-2">Work item</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Owner</th>
+                <th className="px-3 py-2">Assignees</th>
                 <th className="px-3 py-2">Team</th>
                 <th className="px-3 py-2">Due</th>
                 <th className="px-3 py-2">Required</th>
@@ -692,6 +697,10 @@ export default async function CaseDetailPage(props: {
                   assignedTeamId: t.assignedTeamId,
                   type: t.type,
                   isRunnable: t.isRunnable,
+                  assigneeUserIds: mergedDirectAssigneeUserIds({
+                    ownerId: t.ownerId,
+                    assignees: t.assignees,
+                  }),
                 };
                 const canEditTask = !readonly && canUpdateTask(user, taskAccess, caseAccess);
                 const teamCanActUnowned = !readonly && canActOnUnownedTeamTask(user, taskAccess);
@@ -709,7 +718,9 @@ export default async function CaseDetailPage(props: {
                     {readOnlyRow ? (
                       <>
                         <td className="px-3 py-2 text-sm text-slate-800">{formatTaskStatus(t.status)}</td>
-                        <td className="px-3 py-2 text-xs text-slate-600">{t.owner?.name ?? "—"}</td>
+                        <td className="max-w-[17rem] min-w-0 px-3 py-2 align-top text-xs text-slate-600">
+                          <TaskAssigneeChips assignees={orderedTaskAssigneesForDisplay(t)} />
+                        </td>
                         <td className="px-3 py-2 text-xs text-slate-600">{t.assignedTeam?.name ?? "—"}</td>
                         <td className="px-3 py-2 text-xs text-slate-600">{t.dueDate ? t.dueDate.toLocaleDateString() : "—"}</td>
                         <td className="px-3 py-2 text-xs text-slate-600">{t.isRequired ? "Yes" : "No"}</td>
@@ -747,11 +758,13 @@ export default async function CaseDetailPage(props: {
                           canManageAssignments={canManageCaseOps}
                           users={users}
                           teams={teams}
-                          defaultOwnerId={t.ownerId}
+                          defaultAssigneeUserIds={mergedDirectAssigneeUserIds({
+                            ownerId: t.ownerId,
+                            assignees: t.assignees,
+                          })}
                           defaultTeamId={t.assignedTeamId}
                           defaultDue={dueStr}
                           defaultIsRequired={t.isRequired}
-                          ownershipCaption={ownershipDisplayForTask(t)}
                           showTeamQueueHint={teamCanActUnowned}
                         />
                         <td className="px-3 py-2 text-xs text-slate-600">{t.isRunnable ? "Yes" : "No"}</td>
@@ -781,41 +794,52 @@ export default async function CaseDetailPage(props: {
           </table>
         </div>
         {canManageCaseOps ? (
-          <form action={createTaskAction} className="mt-4 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
-            <input type="hidden" name="caseId" value={c.id} />
-            <select name="type" defaultValue={TaskType.BUReview} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-              {TASK_TYPES.map((tt) => (
-                <option key={tt} value={tt}>
-                  {formatTaskType(tt)}
-                </option>
-              ))}
-            </select>
-            <select name="ownerId" defaultValue="" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-              <option value="">Owner — unassigned</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-            <select name="assignedTeamId" defaultValue="" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
-              <option value="">Team — unassigned</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <input type="date" name="dueDate" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" />
-            <input
-              name="notes"
-              placeholder="Optional task notes"
-              className="sm:col-span-2 rounded-md border border-slate-300 px-2 py-1.5 text-xs"
-            />
-            <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800">
-              Add task
-            </button>
-          </form>
+          <div className="mt-4 space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <form
+              id="add-case-task-form"
+              action={createTaskAction}
+              className="grid gap-2 sm:grid-cols-3"
+            >
+              <input type="hidden" name="caseId" value={c.id} />
+              <select name="type" defaultValue={TaskType.BUReview} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                {TASK_TYPES.map((tt) => (
+                  <option key={tt} value={tt}>
+                    {formatTaskType(tt)}
+                  </option>
+                ))}
+              </select>
+              <select name="assignedTeamId" defaultValue="" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="">Team — unassigned</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <input type="date" name="dueDate" className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" />
+              <input
+                name="notes"
+                placeholder="Optional task notes"
+                className="sm:col-span-2 rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+              />
+              <button
+                type="submit"
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+              >
+                Add task
+              </button>
+            </form>
+            <div className="border-t border-slate-200/80 pt-2">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">Assignees (optional)</p>
+              <TaskAssigneesEditor
+                key={`add-task-assignees-${c.id}`}
+                formId="add-case-task-form"
+                users={users}
+                defaultSelectedIds={[]}
+                disabled={false}
+              />
+            </div>
+          </div>
         ) : null}
       </section>
 
@@ -979,12 +1003,16 @@ export default async function CaseDetailPage(props: {
         </section>
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-800">Activity log</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Each line shows who performed the action (signed-in user at save time), then what changed.
+          </p>
           <ul className="mt-3 space-y-2 text-sm">
             {c.activities.map((a) => (
               <li key={a.id} className="flex gap-2">
                 <span className="shrink-0 text-xs text-slate-500">{a.createdAt.toLocaleString()}</span>
-                <span className="text-slate-800">
-                  <span className="font-medium">{a.user?.name ?? "System"}</span>: {a.action}
+                <span className="min-w-0 text-slate-800">
+                  <span className="font-medium text-slate-900">{a.user?.name ?? "System"}</span>
+                  <span className="text-slate-600"> {formatActivityAction(a.action)}</span>
                   {a.details ? <span className="text-slate-600"> — {a.details}</span> : null}
                 </span>
               </li>

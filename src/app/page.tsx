@@ -2,19 +2,13 @@ import { demoLoginAction } from "@/app/actions/auth";
 import { SignedInHomeBrandBanner } from "@/components/branding/SignedInHomeBrandBanner";
 import { CiscoBrandLogo } from "@/components/branding/CiscoBrandLogo";
 import { HomeWorkDashboard } from "@/components/home/HomeWorkDashboard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { DEMO_LOGIN_ACCOUNTS } from "@/lib/auth/demo-accounts";
 import { getSessionUser } from "@/lib/auth/session";
+import { isDemoMode } from "@/lib/env/demo-mode";
 import { listCasesVisibleToUser } from "@/lib/cases/queries";
 import { canViewReports } from "@/lib/rbac";
-
-const DEMO_USERS = [
-  { email: "sales.demo@local", label: "Account team" },
-  { email: "cx.demo@local", label: "CX Ops" },
-  { email: "bu.demo@local", label: "BU contributor" },
-  { email: "finance.demo@local", label: "Finance approver" },
-  { email: "leader.demo@local", label: "Leadership (read-only)" },
-  { email: "admin.demo@local", label: "Platform admin" },
-] as const;
 
 export default async function Home({
   searchParams,
@@ -28,7 +22,7 @@ export default async function Home({
 
   if (user) {
     return (
-      <DashboardShell user={user}>
+      <DashboardShell user={user} demoMode={isDemoMode()}>
         <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
           <SignedInHomeBrandBanner />
 
@@ -39,14 +33,18 @@ export default async function Home({
               <span className="text-slate-500">({user.email})</span>
             </p>
             <p className="max-w-2xl text-xs leading-relaxed text-slate-500">
-              Worklists are scoped by role and assignment. Use the left navigation for Cases, Create request, and Reports
-              (when available). Open any row for the full case workspace (read-only for leadership where applicable).
+              Worklists follow role rules: CX sees all cases; others see requests they created or tasks they are on
+              (including multi-assignee). Use the left navigation for Cases, Create request, and Reports (when
+              available). Open any row for the full case workspace (read-only for leadership where applicable).{" "}
+              <span className="font-medium text-slate-600">
+                You currently have {visibleCases.length} case{visibleCases.length === 1 ? "" : "s"} visible under RBAC.
+              </span>
             </p>
           </header>
 
           {loginErr === "invalid" ? (
             <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-              Unknown or inactive demo email.
+              Invalid email or password.
             </p>
           ) : null}
           {loginErr === "config" ? (
@@ -57,13 +55,20 @@ export default async function Home({
             </p>
           ) : null}
 
-          <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-slate-900/[0.02]">
-            <HomeWorkDashboard
-              user={user}
-              visibleCases={visibleCases}
-              linkStatusChartToReports={canViewReports(user)}
+          {visibleCases.length === 0 ? (
+            <EmptyState
+              title="No cases in your view"
+              description="This account does not yet have any visible requests or task assignments. If your role allows, create a request from the navigation, or sign in as another demo user to explore seeded data."
             />
-          </section>
+          ) : (
+            <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-slate-900/[0.02]">
+              <HomeWorkDashboard
+                user={user}
+                visibleCases={visibleCases}
+                statusBarLinkTarget={canViewReports(user) ? "reports" : "cases"}
+              />
+            </section>
+          )}
 
           <footer className="text-xs text-slate-500">
             Port may differ (for example <code className="font-mono">3001</code>); use the URL printed in the terminal.
@@ -97,7 +102,7 @@ export default async function Home({
 
         {loginErr === "invalid" ? (
           <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-            Unknown or inactive demo email.
+            Invalid email or password.
           </p>
         ) : null}
         {loginErr === "config" ? (
@@ -113,27 +118,38 @@ export default async function Home({
           <div className="p-6">
             <h2 className="text-sm font-semibold text-slate-900">Demo sign-in</h2>
             <p className="mt-1 text-xs text-slate-500">HttpOnly session cookie; local demo only.</p>
-            <form action={demoLoginAction} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-              <label className="block flex-1 text-sm">
+            <form action={demoLoginAction} className="mt-4 flex flex-col gap-3">
+              <label className="block text-sm">
                 <span className="text-slate-700">User</span>
                 <select
                   name="email"
                   required
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm"
-                  defaultValue="cx.demo@local"
+                  className="mt-1 w-full max-w-xl rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  defaultValue="cx.primary@local"
                 >
-                  {DEMO_USERS.map((u) => (
+                  {DEMO_LOGIN_ACCOUNTS.map((u) => (
                     <option key={u.email} value={u.email}>
                       {u.label} — {u.email}
                     </option>
                   ))}
                 </select>
               </label>
+              <label className="block text-sm">
+                <span className="text-slate-700">Password</span>
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  placeholder="Demo123!"
+                  className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm"
+                />
+              </label>
               <button
                 type="submit"
-                className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-800"
+                className="w-fit rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-800"
               >
-                Continue
+                Sign in
               </button>
             </form>
           </div>

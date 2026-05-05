@@ -104,3 +104,27 @@ const usd2 = new Intl.NumberFormat("en-US", {
 export function formatUsd2(amount: number): string {
   return usd2.format(Number.isFinite(amount) ? amount : 0);
 }
+
+/** Human-readable activity `action` codes for the case activity log. */
+const ACTIVITY_ACTION_LABEL: Record<string, string> = {
+  case_created: "created the case",
+  case_submitted: "submitted the case",
+  case_status_changed: "changed case status",
+  case_assignment_updated: "updated case assignment",
+  task_created: "created a task",
+  task_updated: "updated a task",
+  task_activated: "activated a task",
+  comment_added: "added a comment",
+  attachment_added: "added an attachment",
+  external_reference_added: "added an external reference",
+  external_reference_updated: "updated an external reference",
+  quote_booking_updated: "updated quote booking",
+  asset_costs_updated: "updated platform costs",
+  status_observed: "recorded status",
+  draft_saved: "saved a draft",
+  draft_created: "created a draft",
+};
+
+export function formatActivityAction(action: string): string {
+  return ACTIVITY_ACTION_LABEL[action] ?? action.replace(/_/g, " ");
+}

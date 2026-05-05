@@ -21,7 +21,9 @@ import {
   isReadOnlyDemoUser,
   type CaseAccessRow,
   type CaseUpdateRow,
+  type TaskAccessRow,
 } from "@/lib/rbac";
+import { mergedDirectAssigneeUserIds } from "@/lib/tasks/direct-assignees";
 import {
   addAttachmentMetadataSchema,
   addCommentSchema,
@@ -34,6 +36,7 @@ import {
   upsertExternalReferenceSchema,
 } from "@/lib/validations/case-workspace";
 import { normalizeMoneyInput } from "@/lib/cases/financials";
+import { buildCaseAccessRow } from "@/lib/permissions/case-access-projection";
 
 const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
   Draft: [CaseStatus.Submitted, CaseStatus.Cancelled],
@@ -73,15 +76,14 @@ function toCaseAccessRow(row: {
   requesterId: string;
   ownerId: string | null;
   assignedTeamId: string | null;
-  tasks: { ownerId: string | null; assignedTeamId: string | null }[];
+  tasks: {
+    ownerId: string | null;
+    assignedTeamId: string | null;
+    status: TaskStatus;
+    assignees: { userId: string }[];
+  }[];
 }): CaseAccessRow {
-  return {
-    requesterId: row.requesterId,
-    ownerId: row.ownerId,
-    assignedTeamId: row.assignedTeamId,
-    taskOwnerIds: row.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
-    taskTeamIds: row.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
-  };
+  return buildCaseAccessRow(row, row.tasks);
 }
 
 function toCaseUpdateRow(row: {
@@ -89,9 +91,33 @@ function toCaseUpdateRow(row: {
   ownerId: string | null;
   assignedTeamId: string | null;
   status: CaseStatus;
-  tasks: { ownerId: string | null; assignedTeamId: string | null }[];
+  tasks: {
+    ownerId: string | null;
+    assignedTeamId: string | null;
+    status: TaskStatus;
+    assignees: { userId: string }[];
+  }[];
 }): CaseUpdateRow {
   return { ...toCaseAccessRow(row), status: row.status };
+}
+
+function toTaskAccessRow(task: {
+  ownerId: string | null;
+  assignedTeamId: string | null;
+  type: TaskType;
+  isRunnable: boolean;
+  assignees: { userId: string }[];
+}): TaskAccessRow {
+  return {
+    ownerId: task.ownerId,
+    assignedTeamId: task.assignedTeamId,
+    type: task.type,
+    isRunnable: task.isRunnable,
+    assigneeUserIds: mergedDirectAssigneeUserIds({
+      ownerId: task.ownerId,
+      assignees: task.assignees,
+    }),
+  };
 }
 
 function parseFormData(formData: FormData): Record<string, string> {
@@ -142,6 +168,7 @@ async function getCaseOrRedirect(caseId: string) {
           isRunnable: true,
           activatedAt: true,
           caseAssetId: true,
+          assignees: { select: { userId: true } },
         },
       },
     },
@@ -249,12 +276,22 @@ export async function updateCaseAssignmentAction(formData: FormData): Promise<vo
   goCase(caseId, "Case assignment updated.");
 }
 
+function assigneeIdsFromForm(formData: FormData): string[] {
+  const ids = formData
+    .getAll("assigneeUserId")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
+}
+
 export async function createTaskAction(formData: FormData): Promise<void> {
   const raw = parseFormData(formData);
   const fallbackCaseId = raw.caseId ?? "";
   const parsed = createTaskSchema.safeParse(raw);
   if (!parsed.success) goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid task form.", "error");
-  const { caseId, type, ownerId, assignedTeamId, dueDate, notes } = parsed.data;
+  const { caseId, type, assignedTeamId, dueDate, notes } = parsed.data;
+  const assigneeUserIds = assigneeIdsFromForm(formData);
+  const ownerId = assigneeUserIds[0] ?? null;
   const { user, row } = await getCaseOrRedirect(caseId);
   const canManage = hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]) && canUpdateCase(user, toCaseUpdateRow(row));
   if (!canManage) goCase(caseId, "Only CX Ops/Admin can create tasks.", "error");
@@ -264,20 +301,29 @@ export async function createTaskAction(formData: FormData): Promise<void> {
       caseId,
       type,
       status: TaskStatus.NotStarted,
-      ownerId: ownerId ?? null,
+      ownerId,
       assignedTeamId: assignedTeamId ?? null,
       dueDate: parseDateOrNull(dueDate),
       notes: notes ?? null,
       isRequired: true,
       isRunnable: true,
       activatedAt: new Date(),
+      assignees:
+        assigneeUserIds.length > 0
+          ? {
+              create: assigneeUserIds.map((uid) => ({
+                userId: uid,
+                assignedById: user.id,
+              })),
+            }
+          : undefined,
     },
   });
   await logActivity(
     caseId,
     user.id,
     "task_created",
-    `${created.type} (${created.id.slice(-6)}) assigned owner=${ownerId ?? "-"} team=${assignedTeamId ?? "-"}`
+    `${created.type} (${created.id.slice(-6)}) assignees=${assigneeUserIds.length || "none"} team=${assignedTeamId ?? "-"}`
   );
 
   revalidatePath(casePath(caseId));
@@ -295,7 +341,8 @@ export async function updateTaskAction(formData: FormData): Promise<void> {
   const task = row.tasks.find((t) => t.id === taskId);
   if (!task) goCase(caseId, "Task not found on this case.", "error");
 
-  const canEditTask = canUpdateTask(user, task, toCaseAccessRow(row));
+  const taskAccess = toTaskAccessRow(task);
+  const canEditTask = canUpdateTask(user, taskAccess, toCaseAccessRow(row));
   if (!canEditTask) goCase(caseId, "You are not allowed to update this task.", "error");
 
   const canManageAssignments = hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
@@ -312,18 +359,39 @@ export async function updateTaskAction(formData: FormData): Promise<void> {
     goCase(caseId, "Not Required status cannot stay marked required.", "error");
   }
 
-  await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      status,
-      notes: payload.notes?.trim() || null,
-      blockerReason: status === TaskStatus.Blocked ? payload.blockerReason?.trim() || null : null,
-      notRequiredReason: status === TaskStatus.NotRequired ? payload.notRequiredReason?.trim() || null : null,
-      isRequired,
-      ownerId: canManageAssignments ? payload.ownerId ?? null : task.ownerId,
-      assignedTeamId: canManageAssignments ? payload.assignedTeamId ?? null : task.assignedTeamId,
-      dueDate: canManageAssignments ? parseDateOrNull(payload.dueDate) : undefined,
-    },
+  const assigneeUserIds = assigneeIdsFromForm(formData);
+  const nextOwnerId = canManageAssignments ? assigneeUserIds[0] ?? null : task.ownerId;
+
+  await prisma.$transaction(async (tx) => {
+    if (canManageAssignments) {
+      await tx.taskAssignee.deleteMany({ where: { taskId } });
+      if (assigneeUserIds.length > 0) {
+        await tx.taskAssignee.createMany({
+          data: assigneeUserIds.map((uid) => ({
+            taskId,
+            userId: uid,
+            assignedById: user.id,
+          })),
+        });
+      }
+    }
+    await tx.task.update({
+      where: { id: taskId },
+      data: {
+        status,
+        notes: payload.notes?.trim() || null,
+        blockerReason: status === TaskStatus.Blocked ? payload.blockerReason?.trim() || null : null,
+        notRequiredReason: status === TaskStatus.NotRequired ? payload.notRequiredReason?.trim() || null : null,
+        isRequired,
+        ...(canManageAssignments
+          ? {
+              ownerId: nextOwnerId,
+              assignedTeamId: payload.assignedTeamId ?? null,
+              dueDate: parseDateOrNull(payload.dueDate),
+            }
+          : {}),
+      },
+    });
   });
   await logActivity(
     caseId,
@@ -376,7 +444,7 @@ export async function upsertExternalReferenceAction(formData: FormData): Promise
   if (payload.taskId) {
     const task = row.tasks.find((t) => t.id === payload.taskId);
     if (!task) goCase(caseId, "Task for reference not found.", "error");
-    taskScopedAllowed = canUpdateTask(user, task, toCaseAccessRow(row));
+    taskScopedAllowed = canUpdateTask(user, toTaskAccessRow(task), toCaseAccessRow(row));
   }
   if (!caseCanEdit && !taskScopedAllowed) {
     goCase(caseId, "You are not allowed to edit external references.", "error");

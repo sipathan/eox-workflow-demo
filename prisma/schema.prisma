@@ -109,6 +109,9 @@ model User {
   casesRequested Case[]       @relation("CaseRequester")
   casesOwned     Case[]       @relation("CaseOwner")
   tasksOwned     Task[]       @relation("TaskOwner")
+  /// Direct assignments to tasks (many-to-many); complements optional `Task.ownerId`.
+  taskAssignments   TaskAssignee[] @relation("TaskAssigneeUser")
+  taskAssigneesAuthored TaskAssignee[] @relation("TaskAssigneeAssignedBy")
   comments       Comment[]
   activities     ActivityLog[]
   attachments    Attachment[]
@@ -288,12 +291,29 @@ model Task {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
+  assignees TaskAssignee[]
   references ExternalReference[]
 
   @@index([caseId])
   @@index([caseAssetId])
   @@index([assignedTeamId])
   @@index([ownerId])
+}
+
+/// Many-to-many: one workflow task may be directly assigned to multiple users (shared task row).
+model TaskAssignee {
+  id             String   @id @default(cuid())
+  taskId         String
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation("TaskAssigneeUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt     DateTime @default(now())
+  assignedById   String?
+  assignedBy     User?    @relation("TaskAssigneeAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([taskId, userId])
+  @@index([userId])
+  @@index([taskId])
 }
 
 model Comment {

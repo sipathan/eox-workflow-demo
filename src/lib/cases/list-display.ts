@@ -1,5 +1,6 @@
 import { TaskStatus } from "@prisma/client";
 import type { CaseListRow } from "@/lib/cases/queries";
+import { userHasOperationalTaskTie } from "@/lib/tasks/direct-assignees";
 
 /** Primary platform name plus overflow count for multi-platform cases. */
 export function caseListPlatformSummary(row: CaseListRow): string {
@@ -28,4 +29,25 @@ export function caseListTaskWorkHint(row: CaseListRow): string {
   if (openRunnable === 0) return `${notYetRunnable} queued`;
   if (notYetRunnable === 0) return `${openRunnable} active`;
   return `${openRunnable} active · ${notYetRunnable} queued`;
+}
+
+/**
+ * Same as `caseListTaskWorkHint`, plus how many **open runnable** tasks this user can act on
+ * (direct assignee or task team). Null-safe on `assignees`.
+ */
+export function caseListTaskWorkHintForUser(
+  row: CaseListRow,
+  userId: string,
+  userTeamIds: Set<string>
+): string {
+  const base = caseListTaskWorkHint(row);
+  const yours = row.tasks.filter(
+    (t) =>
+      t.isRunnable &&
+      t.status !== TaskStatus.Completed &&
+      t.status !== TaskStatus.NotRequired &&
+      userHasOperationalTaskTie(userId, userTeamIds, t)
+  ).length;
+  if (yours === 0) return base;
+  return `${base} · ${yours} open involve you`;
 }

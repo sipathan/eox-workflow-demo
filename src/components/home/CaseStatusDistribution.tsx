@@ -6,12 +6,23 @@ import type { StatusCount } from "@/lib/home/worklists";
 type Props = {
   /** Precomputed from visible cases for the signed-in user (same scope as worklists). */
   distribution: StatusCount[];
-  /** When true, each row links to the reports dashboard with that case status pre-selected. */
-  linkRowsToReports?: boolean;
+  /** Where each bar links: Reports (ops roles) or filtered Cases list (so every count is drillable). */
+  statusBarLinkTarget?: "reports" | "cases";
+  viewerScope?: "portfolio" | "scoped";
 };
 
 /** Horizontal bar chart — server-rendered; updates on full page refresh. */
-export function CaseStatusDistribution({ distribution, linkRowsToReports = false }: Props) {
+function hrefForStatus(target: "reports" | "cases" | undefined, status: CaseStatus): string | undefined {
+  if (!target) return undefined;
+  const q = encodeURIComponent(status);
+  return target === "reports" ? `/reports?status=${q}` : `/cases?status=${q}`;
+}
+
+export function CaseStatusDistribution({
+  distribution,
+  statusBarLinkTarget,
+  viewerScope = "scoped",
+}: Props) {
   const total = distribution.reduce((acc, d) => acc + d.count, 0);
   const max = Math.max(1, ...distribution.map((d) => d.count));
 
@@ -23,6 +34,11 @@ export function CaseStatusDistribution({ distribution, linkRowsToReports = false
     );
   }
 
+  const scopeLine =
+    viewerScope === "portfolio"
+      ? " Portfolio-wide for CX / leadership / platform roles — same cohort as the Cases list."
+      : " Scoped to your account — same cohort as the Cases list and worklists above.";
+
   return (
     <section
       className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/[0.03]"
@@ -32,8 +48,12 @@ export function CaseStatusDistribution({ distribution, linkRowsToReports = false
         Case status distribution
       </h3>
       <p className="mt-1 text-xs text-slate-500">
-        Counts reflect cases you can see ({total} total). Refreshes when you reload or sign back in.
-        {linkRowsToReports ? " Rows link to Reports with the same status filter." : null}
+        Counts reflect cases you can see ({total} total).{scopeLine} Refreshes when you reload or sign back in.
+        {statusBarLinkTarget === "reports"
+          ? " Each row links to Reports with the same status filter."
+          : statusBarLinkTarget === "cases"
+            ? " Each row opens the Cases list filtered to that status."
+            : null}
       </p>
       <div className="mt-4 space-y-2.5">
         {distribution.map(({ status, count }) => (
@@ -42,7 +62,7 @@ export function CaseStatusDistribution({ distribution, linkRowsToReports = false
             status={status}
             count={count}
             max={max}
-            href={linkRowsToReports ? `/reports?status=${encodeURIComponent(status)}` : undefined}
+            href={hrefForStatus(statusBarLinkTarget, status)}
           />
         ))}
       </div>

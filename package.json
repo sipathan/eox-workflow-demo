@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio"
   },
   "dependencies": {

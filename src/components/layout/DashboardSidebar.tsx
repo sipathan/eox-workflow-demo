@@ -31,8 +31,8 @@ export function DashboardSidebar({ user }: Props) {
             <p className="mt-0.5 text-[10px] leading-snug text-slate-600">EoVSS / EoSM / ESS/MSS · Case management</p>
           </div>
         </div>
-        <p className="mt-2.5 truncate border-t border-slate-100 pt-2 text-[11px] font-medium text-slate-800" title={user.email}>
-          {user.name}
+        <p className="mt-2.5 border-t border-slate-100 pt-2 text-[10px] leading-snug text-slate-500">
+          Signed-in identity and roles are shown in the header →
         </p>
       </div>
 

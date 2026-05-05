@@ -17,13 +17,19 @@ export function isLeadershipReadonly(user: SessionUser): boolean {
 
 /** Minimal case + assignment projection for authorization (no full Prisma graph required). */
 export type CaseAccessRow = Pick<Case, "requesterId" | "ownerId" | "assignedTeamId"> & {
+  /** Union of all users with a direct task stake (`TaskAssignee` ∪ `Task.ownerId`) across tasks on the case (all statuses). */
   taskOwnerIds: string[];
+  /** Distinct task queue ids from **all** tasks; used with `taskOwnerIds` for non–CX case visibility. */
   taskTeamIds: string[];
 };
 
 export type CaseUpdateRow = CaseAccessRow & Pick<Case, "status">;
 
-export type TaskAccessRow = Pick<Task, "ownerId" | "assignedTeamId" | "type" | "isRunnable">;
+/** Task-level auth projection: team queue + runnable + direct assignees (M2M + legacy `ownerId`). */
+export type TaskAccessRow = Pick<Task, "ownerId" | "assignedTeamId" | "type" | "isRunnable"> & {
+  /** User ids with a direct assignment (`TaskAssignee` ∪ `ownerId`). */
+  assigneeUserIds: readonly string[];
+};
 
 function userTeamIds(user: SessionUser): Set<string> {
   return new Set(user.teams.map((t) => t.id));
@@ -34,7 +40,7 @@ function userTeamIds(user: SessionUser): Set<string> {
  * when their role permits task updates.
  */
 export function canActOnUnownedTeamTask(user: SessionUser, task: TaskAccessRow): boolean {
-  if (task.ownerId) return false;
+  if (task.ownerId || task.assigneeUserIds.length > 0) return false;
   if (!task.assignedTeamId) return false;
   const onTeam = userTeamIds(user).has(task.assignedTeamId);
   if (!onTeam) return false;
@@ -48,36 +54,23 @@ export function canActOnUnownedTeamTask(user: SessionUser, task: TaskAccessRow):
 }
 
 /**
- * Whether the user may see a case in list/detail views.
- * — Account team: own requests only.
- * — CX Ops: all in-scope cases for demo.
- * — BU / Finance: assigned owner or team on a task, case owner, or team-aligned case queue.
- * — Leadership: read-only portfolio visibility.
- * — Platform admin: full visibility.
+ * Whether the user may see a case in list/detail/reports.
+ * Aligns with `docs/PROJECT_CONTEXT.md` roles:
+ * — **CX Operations**: all cases (workflow operator).
+ * — **Platform admin** / **Leadership (read-only)**: all cases.
+ * — **Everyone else**: only cases they **created** (`requesterId`) or where they are on a task — **direct assignee**
+ *   (multi-assignee + `ownerId`) or **task queue** member — for **any** task status (active or historical).
  */
 export function canViewCase(user: SessionUser, row: CaseAccessRow): boolean {
   if (isPlatformAdmin(user)) return true;
+  if (hasAnyRole(user, [RoleKey.LEADERSHIP_READONLY])) return true;
   if (hasAnyRole(user, [RoleKey.CX_OPS])) return true;
 
-  if (hasAnyRole(user, [RoleKey.ACCOUNT_TEAM])) {
-    return row.requesterId === user.id;
-  }
-
   const teamIds = userTeamIds(user);
-  const onCaseTeam = !!row.assignedTeamId && teamIds.has(row.assignedTeamId);
-  const onTaskTeam = row.taskTeamIds.some((id) => teamIds.has(id));
-  const ownsTask = row.taskOwnerIds.includes(user.id);
-  const isCaseOwner = row.ownerId === user.id;
-
-  if (hasAnyRole(user, [RoleKey.BU_CONTRIBUTOR, RoleKey.FINANCE_APPROVER])) {
-    return ownsTask || onTaskTeam || isCaseOwner || onCaseTeam;
-  }
-
-  if (hasAnyRole(user, [RoleKey.LEADERSHIP_READONLY])) {
-    return true;
-  }
-
-  return onCaseTeam || isCaseOwner || ownsTask;
+  const createdCase = row.requesterId === user.id;
+  const onTaskDirect = row.taskOwnerIds.includes(user.id);
+  const onTaskQueue = row.taskTeamIds.some((id) => teamIds.has(id));
+  return createdCase || onTaskDirect || onTaskQueue;
 }
 
 /**
@@ -109,8 +102,8 @@ export function canUpdateTask(user: SessionUser, task: TaskAccessRow, caseRow: C
   }
 
   const teamIds = userTeamIds(user);
-  const onTask =
-    task.ownerId === user.id || (!!task.assignedTeamId && teamIds.has(task.assignedTeamId));
+  const isDirectAssignee = task.assigneeUserIds.includes(user.id) || task.ownerId === user.id;
+  const onTask = isDirectAssignee || (!!task.assignedTeamId && teamIds.has(task.assignedTeamId));
   const unownedTeamTask = canActOnUnownedTeamTask(user, task);
 
   if (hasAnyRole(user, [RoleKey.BU_CONTRIBUTOR, RoleKey.FINANCE_APPROVER])) {
@@ -140,4 +133,13 @@ export function canCreateRequest(user: SessionUser): boolean {
 /** Leadership demo: read-only — block mutations in server actions and future forms. */
 export function isReadOnlyDemoUser(user: SessionUser): boolean {
   return isLeadershipReadonly(user) && !isPlatformAdmin(user);
+}
+
+/**
+ * Users who see the **full** case portfolio under `canViewCase` (CX Ops, Platform Admin, Leadership).
+ * Used to align list/home counts with “portfolio-wide” vs “scoped to my involvement” UX.
+ */
+export function isPortfolioWideCaseViewer(user: SessionUser): boolean {
+  if (isPlatformAdmin(user)) return true;
+  return hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.LEADERSHIP_READONLY]);
 }

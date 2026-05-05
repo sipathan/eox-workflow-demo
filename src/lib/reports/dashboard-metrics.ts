@@ -269,6 +269,7 @@ function isOpenRunnableTask(t: { isRunnable: boolean; status: TaskStatus }): boo
   return t.status !== TaskStatus.Completed && t.status !== TaskStatus.NotRequired;
 }
 
+/** Counts distinct **cases** with a matching open runnable task (not per assignee; visibility already scoped by `listCasesForReports`). */
 function distinctCaseCountForTaskTypes(rows: CaseReportsRow[], types: Set<TaskType>): number {
   let n = 0;
   for (const r of rows) {

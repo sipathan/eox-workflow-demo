@@ -25,8 +25,37 @@ Leadership-ready demo for queue-driven EoX request management:
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string for Prisma (see `.env.example`). |
 | `SESSION_SECRET` | Secret used to sign demo session cookies (**32+ characters** recommended for shared or EC2 hosts). |
+| `DEMO_MODE` | Optional. Set to exactly `true` to show the **demo persona switcher** in the signed-in dashboard header (see below). Any other value or unset = **disabled** (no switcher UI; server ignores persona-switch requests). |
+| `COOKIE_SECURE` | Set `true` behind HTTPS (typical EC2 behind TLS). |
+| `COOKIE_SAME_SITE` | `lax` (default), `strict`, or `none` (requires `COOKIE_SECURE=true`). |
 
 Copy `.env.example` to `.env` and set values before running migrations or the app.
+
+### Demo persona switcher (`DEMO_MODE=true`)
+
+Cisco SSO is out of scope for this pilot, so when you need **fast persona changes during a live demo**, enable demo mode:
+
+- **What it does:** After normal sign-in, the dashboard shows your **name**, **email**, and **role badges** in a sticky header, plus a **Demo mode** dropdown listing all **10 seeded users**. Choosing a user **re-issues the session cookie** for that account **without** re-entering the password.
+- **Security:** The switcher is **not rendered** and the server action **no-ops** (redirects without changing the session) unless `DEMO_MODE` is exactly `true`. Password login and session signing are unchanged. **Do not enable** on internet-facing production; use only for **local** or **internal EC2** pilots where this trade-off is acceptable.
+
+**Local (`npm run dev`):** add to `.env`:
+
+```bash
+DEMO_MODE=true
+```
+
+Restart the dev server, sign in once with `Demo123!`, then use the header dropdown to jump between personas.
+
+**Docker Compose (laptop or EC2):** in the same `.env` file Compose reads from the repo root:
+
+```bash
+DEMO_MODE=true
+SESSION_SECRET=<strong-32+-char-secret>
+```
+
+For EC2, prefer **HTTPS** in front of the app and set `COOKIE_SECURE=true` (and a suitable `COOKIE_SAME_SITE`) in `.env` so browsers send the cookie on TLS. Rebuild or recreate containers after changing env: `docker compose up --build -d`.
+
+**Turning it off:** remove `DEMO_MODE` or set `DEMO_MODE=false` — the header shows identity and roles only; switching requires **Sign out** and password login again.
 
 ## Local development (without Docker for the app)
 
@@ -140,6 +169,7 @@ git clone <YOUR_REPO_URL> eox-workflow-demo
 cd eox-workflow-demo
 cp .env.example .env
 # Set SESSION_SECRET to a strong value (minimum 32 characters — required for sign-in to work).
+# Optional: DEMO_MODE=true for header persona switching during demos (pilot only).
 nano .env   # or vi
 
 docker compose up --build -d
@@ -156,6 +186,7 @@ npm run start        # production server (after build)
 npm run lint         # static lint checks
 npm run db:generate  # regenerate Prisma client
 npm run db:studio    # Prisma Studio
+npm run db:reset     # destructive: wipe DB, migrate, seed (local demo reset — see docs/HANDOFF_CURRENT_STATE.md)
 ```
 
 ## Demo Login Credentials
@@ -166,14 +197,12 @@ All seeded users use password:
 Demo123!
 ```
 
-Users:
+Enter that password on the **Demo sign-in** form (user dropdown + password field).
 
-- `sales.demo@local` (Account Team)
-- `cx.demo@local` (CX Ops + Account Team)
-- `bu.demo@local` (BU Contributor)
-- `finance.demo@local` (Finance Approver)
-- `leader.demo@local` (Leadership Read-only)
-- `admin.demo@local` (Platform Admin)
+Users (10 total, same password **Demo123!**; **8** have seeded workload, **2** have **no** cases or tasks — empty queues for CX `cx.inactive@local` and Account `account.inactive@local`; all remain `isActive` for sign-in):
+
+- **CX (4):** `cx.primary@local` (also Account + Platform admin), `cx.priya@local`, `cx.luis@local`, `cx.inactive@local` *(empty portfolio)*
+- **General (6):** `sales.demo@local`, `account.maya@local`, `bu.demo@local`, `finance.demo@local`, `leader.demo@local`, `account.inactive@local` *(empty portfolio)*
 
 ## High-Level Architecture
 
@@ -181,11 +210,11 @@ Users:
 - **Auth**: local email/password with HttpOnly session token.
 - **RBAC/assignment model**:
   - role checks (CX/BU/Finance/Leadership/Admin/Account)
-  - assignment checks (case owner, case team queue, task owner, task team queue)
-  - unowned team tasks are actionable by authorized team members.
+  - assignment checks (case owner, case team queue, task team queue, and **direct task assignees** via `TaskAssignee` plus legacy `Task.ownerId`)
+  - unowned team tasks are actionable by authorized team members when **no** individual assignees are set.
 - **Data model**:
   - `Case` can be assigned to a queue/team and optionally an owner
-  - `Task` can be assigned to a queue/team and optionally an owner
+  - `Task` can be assigned to a queue/team; **multiple users** share one task row via `TaskAssignee` (first assignee is mirrored on `Task.ownerId` for compatibility)
   - `ExternalReference`, `Comment`, `Attachment`, `ActivityLog` linked to case/task context
 - **Reports**: filtered datasets from role-scoped visible cases.
 
@@ -233,7 +262,7 @@ This section describes the intended production evolution and is **separate** fro
    - KPI cards
    - status/type/aging/monthly trend charts
    - bottlenecks + recent blocked tables
-2) Switch to `cx.demo@local`:
+2) Switch to `cx.primary@local`:
    - open **Cases** queue
    - filter by status/team
    - open a blocked case

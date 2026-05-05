@@ -12,7 +12,14 @@
 
 ## Case routing note (`routingNote`)
 
-- **`Case.routingNote`**: optional text for CX routing / handoff context (separate from intake **`Case.notes`**). Editable only via **`updateCaseAssignmentAction`** with the same gates as owner/team/Deal ID. Empty submit clears to **`null`**. Migration **`20260503120000_case_routing_note`** adds the column.
+- **`Case.routingNote`**: optional text for CX routing / handoff context (separate from intake **`Case.notes`**). Editable only via **`updateCaseAssignmentAction`** with the same gates as owner/team/Deal ID. Empty submit clears to **`null`**. Column is included in the PostgreSQL baseline migration **`20260530120000_init_postgresql`**.
+
+## Task assignees (many-to-many)
+
+- **`TaskAssignee`** junction: `taskId`, `userId`, `assignedAt`, optional `assignedById` (CX/Admin saves set this to the acting user; seed uses `null`). **`@@unique([taskId, userId])`**. Migration **`20260531120000_task_assignees`** creates the table and **backfills** one row per existing **`Task.ownerId`**.
+- **`Task.ownerId`** is retained: on CX/Admin create/update task it is set to the **first** selected assignee (or `null` if none). Authorization and case visibility treat **direct** involvement as the union of junction user ids and **`ownerId`** (`mergedDirectAssigneeUserIds` / `caseLevelTaskDirectUserIds` in **`src/lib/tasks/direct-assignees.ts`**), exposed on **`TaskAccessRow.assigneeUserIds`** and folded into **`CaseAccessRow.taskOwnerIds`** without renaming that field.
+- **Unowned team queue** (`canActOnUnownedTeamTask`): applies only when there is **no** `ownerId` and **no** junction assignees after that merge.
+- **UI**: case workspace **Workflow / tasks** uses an **Assignees** column: **chips** for read-only rows (**`TaskAssigneeChips`**), and **`TaskAssigneesEditor`** (chips + remove + “Add assignee” dropdown + repeated hidden `assigneeUserId`) when **`canManageCaseOps`**; others see assignees read-only in the same component.
 
 ## Request types and intake (EoSM / ESS/MSS / partner optionality)
 
@@ -41,7 +48,8 @@
 
 ## RBAC and runnable tasks
 
-- `TaskAccessRow` includes `isRunnable`. Non–CX/Admin users cannot update tasks when `isRunnable` is false (`canUpdateTask` in `src/lib/rbac.ts`).
+- `TaskAccessRow` includes `isRunnable` and **`assigneeUserIds`** (union of `TaskAssignee` and `Task.ownerId`). Non–CX/Admin users cannot update tasks when `isRunnable` is false (`canUpdateTask` in `src/lib/rbac.ts`). BU/Finance (and similar) may update when they are on the task team, are a direct assignee, or may claim an unowned team-queue task per `canActOnUnownedTeamTask`.
+- **Case visibility (`canViewCase`)** — **CX Ops** = full portfolio; **Platform Admin** / **Leadership** = full portfolio; **all other roles** = **requester** (creator) **or** task involvement — direct assignee (multi-assignee + `ownerId`) **or** member of a task’s **`assignedTeamId`** — for **any** task status (active or historical). Projection: **`buildCaseAccessRow`** in **`src/lib/permissions/case-access-projection.ts`** (used by case list, detail, reports, workspace). Case-level **owner** / **assigned team** alone do **not** grant visibility unless the user also matches the rules above.
 
 ## Case detail presentation
 
@@ -62,10 +70,16 @@
 
 - Activation logic is intentionally small and synchronous (re-read tasks in a short loop). Good enough for demo-scale Postgres; production would likely use explicit workflow state or a rules engine.
 
+## Demo login (local)
+
+- **`DEMO_LOGIN_ACCOUNTS`** in **`src/lib/auth/demo-accounts.ts`** lists every seeded demo email (labels for the dropdown). It **must stay in sync** with **`prisma/seed.ts`** — new seed users are not sign-in-capable until added here.
+- **`demoLoginAction`** (`src/app/actions/auth.ts`): normalize email, require **`isAllowedDemoLoginEmail`**, load user with **`passwordHash`**, verify with **`bcrypt.compare`** against the submitted password, then **`setSessionCookie`**. Failures redirect with a **single generic** query flag (`login=invalid`) to avoid account enumeration.
+- Unsigned **`/`** form: user select + **password** field (all seeded accounts use **`Demo123!`** per README).
+
 ## PostgreSQL + Docker Compose (internal pilot)
 
 - **Prisma** `datasource` is **PostgreSQL**; `DATABASE_URL` is the only connection string (local Postgres, Compose service `postgres`, or RDS later).
-- **Migrations:** SQLite-era migration folders were removed and replaced by a **single baseline** `prisma/migrations/20260530120000_init_postgresql` generated from the current `schema.prisma` (`prisma migrate diff --from-empty …`). New environments run **`prisma migrate deploy`** (Compose entrypoint runs this before `next start`).
+- **Migrations:** SQLite-era migration folders were removed and replaced by Postgres baseline **`20260530120000_init_postgresql`** plus follow-on **`20260531120000_task_assignees`** (`TaskAssignee` + backfill). New environments run **`prisma migrate deploy`** (Compose entrypoint runs this before `next start`).
 - **Runtime:** `Dockerfile` (multi-stage build) + `docker-compose.yml` (app + Postgres 16, named volume). Postgres publishes **`5432:5432`** for **host** access (Prisma / `npm run dev`); the **app** service still uses **`postgres:5432`** on the Compose network. **`docker-entrypoint.sh`**: `migrate deploy` → `npm run start`. Demo auth unchanged.
 - **Seed:** not run automatically in Compose; operators run `docker compose exec app npx prisma db seed` when they want demo data. The **runner** image includes **`src/`** and **`tsconfig.json`** (not needed for `next start`) so **`tsx prisma/seed.ts`** can resolve **`../src/lib/workflow/task-templates`**. Cleaner long-term: move shared seed strings into **`prisma/`** (no app import) or compile a seed bundle — deferred for pilot safety.
 
@@ -114,5 +128,5 @@
 - **Logo file**: **`public/branding/cisco-logo.svg`** — Cisco wordmark **SVG** from [Wikimedia Commons — File:Cisco_logo.svg](https://commons.wikimedia.org/wiki/File:Cisco_logo.svg) (vendored copy; comply with Commons license + Cisco trademark policy for your use case). **`CiscoBrandLogo`** loads **`/branding/cisco-logo.svg`** with intrinsic **`width`/`height`** from the asset (`72×38`), **`object-contain`**, and **`alt="Cisco"`**. See **`public/branding/README.md`** for source URL and replacement notes.
 - **Shell**: **`DashboardSidebar`** carries logo + full product title + compact subtitle + user; **`DashboardShell`** main pane is **`bg-white`** for a clean operational canvas.
 - **Signed-in Home**: **`SignedInHomeBrandBanner`** — restrained card (top gradient rule, white body, sky badge) so the hero does not dominate worklists.
-- **Login (`/` unsigned)**: Lighter treatment only — accent strip, logo + product copy, existing form; no new auth logic.
+- **Login (`/` unsigned)**: Accent strip, logo + product copy, seeded-user dropdown + password (see **Demo login (local)** above).
 - **Metadata** (`root layout`): title/description aligned with product naming for browser chrome.

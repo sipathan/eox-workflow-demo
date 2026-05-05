@@ -296,7 +296,7 @@ Authentication for Prototype
 This prototype must use local demo login only.
 Use these demo users:
 ù sales.demo@local
-ù cx.demo@local
+ù cx.primary@local
 ù bu.demo@local
 ù finance.demo@local
 ù leader.demo@local

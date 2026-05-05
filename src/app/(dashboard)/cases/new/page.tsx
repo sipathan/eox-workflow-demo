@@ -36,7 +36,7 @@ export default async function NewCasePage({
       ) : (
         <EmptyState
           title="Request creation not available for this account"
-          description="Your current roles are limited to read or assigned work in this demo. Use sales.demo@local or cx.demo@local to create requests."
+          description="Your current roles are limited to read or assigned work in this demo. Use sales.demo@local or cx.primary@local to create requests."
         />
       )}
     </div>

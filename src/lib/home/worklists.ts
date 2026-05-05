@@ -9,6 +9,8 @@ import {
 } from "@/lib/rbac";
 import type { SessionUser } from "@/lib/auth/session";
 import type { CaseListRow } from "@/lib/cases/queries";
+import { buildCaseAccessRow } from "@/lib/permissions/case-access-projection";
+import { mergedDirectAssigneeUserIds, userHasOperationalTaskTie } from "@/lib/tasks/direct-assignees";
 
 const TERMINAL: ReadonlySet<CaseStatus> = new Set([
   CaseStatus.Closed,
@@ -22,13 +24,7 @@ function isNonTerminalStatus(status: CaseStatus): boolean {
 }
 
 function toCaseAccessRow(r: CaseListRow): CaseAccessRow {
-  return {
-    requesterId: r.requesterId,
-    ownerId: r.ownerId,
-    assignedTeamId: r.assignedTeamId,
-    taskOwnerIds: r.tasks.map((t) => t.ownerId).filter(Boolean) as string[],
-    taskTeamIds: r.tasks.map((t) => t.assignedTeamId).filter(Boolean) as string[],
-  };
+  return buildCaseAccessRow(r, r.tasks);
 }
 
 function toTaskAccessRow(t: CaseListRow["tasks"][number]): TaskAccessRow {
@@ -37,27 +33,27 @@ function toTaskAccessRow(t: CaseListRow["tasks"][number]): TaskAccessRow {
     assignedTeamId: t.assignedTeamId,
     type: t.type,
     isRunnable: t.isRunnable,
+    assigneeUserIds: mergedDirectAssigneeUserIds({
+      ownerId: t.ownerId,
+      assignees: t.assignees ?? [],
+    }),
   };
 }
 
 /**
- * User has a direct stake in the case (same spirit as `myWorkCases`, plus CX/Admin/Leadership portfolio).
- * Rows are already limited to `canViewCase`.
+ * User stake for Home worklists (aligned with `myWorkCases` / visibility policy: requester or task assignee / task team).
+ * CX Ops / Platform Admin / Leadership: full visible portfolio.
  */
 export function isWorklistInvolvement(user: SessionUser, r: CaseListRow): boolean {
   if (isPlatformAdmin(user) || hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.LEADERSHIP_READONLY])) {
     return true;
   }
-  if (r.ownerId === user.id) return true;
   if (r.requesterId === user.id) return true;
   const teamIds = new Set(user.teams.map((t) => t.id));
-  if (r.assignedTeamId && teamIds.has(r.assignedTeamId)) return true;
-  return r.tasks.some(
-    (t) => t.ownerId === user.id || (!!t.assignedTeamId && teamIds.has(t.assignedTeamId))
-  );
+  return r.tasks.some((t) => userHasOperationalTaskTie(user.id, teamIds, t));
 }
 
-/** Cases the user tracks as “active” work — non-terminal, involvement-aware. */
+/** Non-terminal cases where `isWorklistInvolvement` is true (each case at most once; input is already deduped by query). */
 export function filterMyActiveCases(user: SessionUser, rows: CaseListRow[]): CaseListRow[] {
   return rows.filter((r) => {
     if (!isNonTerminalStatus(r.status)) return false;
@@ -65,7 +61,10 @@ export function filterMyActiveCases(user: SessionUser, rows: CaseListRow[]): Cas
   });
 }
 
-/** Runnable tasks the user may update (empty for read-only leadership-only). */
+/**
+ * Cases with at least one open runnable task the user may update (`canUpdateTask`: assignee, task team, unowned team
+ * queue per role rules). Multi-assignees each get the case if they can act. Empty for read-only leadership-only.
+ */
 export function filterCasesAwaitingMyInput(user: SessionUser, rows: CaseListRow[]): CaseListRow[] {
   if (isReadOnlyDemoUser(user)) return [];
   const access = (r: CaseListRow) => toCaseAccessRow(r);
@@ -86,7 +85,10 @@ function userRelevantToInfoReturn(user: SessionUser, r: CaseListRow, t: CaseList
   return canUpdateTask(user, toTaskAccessRow(t), row);
 }
 
-/** Awaiting Info at case level, or an active Additional Info task relevant to the user. */
+/**
+ * `Awaiting Info` case status (if user is involved per `isWorklistInvolvement`), or an active Additional Info task
+ * where `canUpdateTask` applies (includes multi-assignee direct assignment).
+ */
 export function filterCasesReturnedForMoreInformation(user: SessionUser, rows: CaseListRow[]): CaseListRow[] {
   return rows.filter((r) => {
     if (r.status === CaseStatus.AwaitingInfo) return isWorklistInvolvement(user, r);
@@ -101,7 +103,7 @@ export function filterCasesReturnedForMoreInformation(user: SessionUser, rows: C
   });
 }
 
-/** Dedupe by case id while preserving first occurrence order. */
+/** Dedupe by case id while preserving first occurrence order (one row per case per section even with many assignees). */
 export function dedupeCasesById(rows: CaseListRow[]): CaseListRow[] {
   const seen = new Set<string>();
   const out: CaseListRow[] = [];

@@ -3,7 +3,8 @@
 ## Product / UX
 
 - **Left nav mobile**: sidebar is always visible (fixed width); add a collapse / drawer pattern for small viewports if demos need it. (Sign out now sits under the primary links with a divider — long-page reach is no longer an issue.)
-- **Home worklists**: the same case may still appear in more than one home section (e.g. active + awaiting input); the **case list** page dedupes “My work” vs “Other visible.” Add cross-section deduping on home only if product wants a stricter inbox model.
+- **Home worklists**: the same case may still appear in **more than one** home section (e.g. active + awaiting input); within each section, **`dedupeCasesById`** ensures one row per case. The **case list** dedupes “My work” vs “Other visible.” Optional: cross-section deduping on Home if product wants a single combined inbox.
+- **Work / assignee stake helpers** live in **`src/lib/tasks/direct-assignees.ts`** (`userHasOperationalTaskTie`, `isUserDirectTaskAssignee`) and are shared by **`myWorkCases`** and **`isWorklistInvolvement`** — keep them in sync when changing visibility rules.
 - **Intake review step**: the final review panel does not yet echo per-platform **BU/CX/totals**; add a short financial summary there if leadership wants costs visible before submit. Partner line is omitted when blank; platform summary includes **quantity** per row when set. **ESS/MSS**: review shows subtype, migration plan (wrapped), timeline, and optional hardware/software lines when present.
 - **Quantity helper (future)**: optional suggestion of **quantity** from parsed serial-number count (user-editable override) was deferred; document if product wants it later.
 - **“Days active”**: case detail shows **`Not active`** until `isRunnable`; then counts whole days from `activatedAt` (`daysActiveDisplay`). If activation logic ever **rewrites** `activatedAt` on already-active tasks, the metric could reset — review `applyTaskActivationRules` if that becomes a problem.
@@ -12,6 +13,8 @@
 
 ## Technical
 
+- **New demo users in seed**: extend **`DEMO_LOGIN_ACCOUNTS`** in **`src/lib/auth/demo-accounts.ts`** (and the home dropdown uses that list) so sign-in stays aligned with **`prisma/seed.ts`**.
+- **Task assignees UX (optional)**: workflow uses chips + add dropdown (`TaskAssigneesEditor`). A **searchable** multi-picker (e.g. combobox) is still a possible upgrade for long user lists or mobile.
 - **Case detail layout**: **`/cases/[id]`** places **Case summary** and **Operations & assignment** side by side from **`lg`**, stacked on smaller viewports. **Case summary** leads with business context (**Business justification**, **Migration plan**, **Extension window**, then ESS/MSS-only extras when applicable) before **Case totals** (rollup BU/CX/quote + units + booking chip). Then **Platforms & equipment**, **Workflow / tasks**, **Platform financials** (when assets), **Booking outcome**, then external references / comments / activity / attachments. Same high-level order for all **`RequestType`** values. **`canManageCaseOps`** gates the ops panel and related task controls. Intake **`notes`** and CX **`routingNote`** stay distinct columns.
 - **ESS/MSS naming (demo)**: Intake step 0, case summary (`/cases/[id]`), case list, home work rows, and reports filters use the **Service** label where users pick or read **EoVSS / EoSM / ESS/MSS**; wire field and Prisma enum stay **`requestType`** / **`ESS_MSS`**. Public case IDs use **`ESSMSS-`** (no slash).
 - **ESS/MSS workflow**: submitted cases use **`EligibilityReview`** (1–2 rows by subtype) instead of BU review/pricing; activation and reports treat eligibility as pre-quote work alongside BU tasks. Further MSS subflow branching can extend **`task-templates.ts`** only.
