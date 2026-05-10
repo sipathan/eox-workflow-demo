@@ -3,7 +3,7 @@
 ## Product / UX
 
 - **Left nav mobile**: sidebar is always visible (fixed width); add a collapse / drawer pattern for small viewports if demos need it. (Sign out now sits under the primary links with a divider — long-page reach is no longer an issue.)
-- **Home worklists**: the same case may still appear in **more than one** home section (e.g. active + awaiting input); within each section, **`dedupeCasesById`** ensures one row per case. The **case list** dedupes “My work” vs “Other visible.” Optional: cross-section deduping on Home if product wants a single combined inbox.
+- **Home worklists**: the same case may still appear in **more than one** home section (e.g. active + awaiting input); within each section, **`dedupeCasesById`** ensures one row per case. The **case list** dedupes “My work” vs “Other visible.” Optional: cross-section deduping on Home if product wants a single combined inbox. **Home KPI “Pending your input”** is restricted to **non-terminal** cases only; the **Cases awaiting my input** worklist still scans all **`visibleCases`** (rare mismatch if a terminal case ever carried a runnable task).
 - **Work / assignee stake helpers** live in **`src/lib/tasks/direct-assignees.ts`** (`userHasOperationalTaskTie`, `isUserDirectTaskAssignee`) and are shared by **`myWorkCases`** and **`isWorklistInvolvement`** — keep them in sync when changing visibility rules.
 - **Intake review step**: the final review panel does not yet echo per-platform **BU/CX/totals**; add a short financial summary there if leadership wants costs visible before submit. Partner line is omitted when blank; platform summary includes **quantity** per row when set. **ESS/MSS**: review shows subtype, migration plan (wrapped), timeline, and optional hardware/software lines when present.
 - **Quantity helper (future)**: optional suggestion of **quantity** from parsed serial-number count (user-editable override) was deferred; document if product wants it later.
@@ -25,6 +25,7 @@
 
 ## Docs
 
+- **Post-login entry**: authenticated default route is **`/`** (Home); **`demoLoginAction`** / **`demoSwitchPersonaAction`** in **`src/app/actions/auth.ts`** — see **`HANDOFF_CURRENT_STATE.md`** and **`IMPLEMENTATION_DECISIONS.md`**. **Home KPIs**: **`buildHomeKpiCounts`** / **`HomeKpiCards`** — see **`HANDOFF_CURRENT_STATE.md`** (Home section).
 - `docs/PROJECT_CONTEXT.md` still lists legacy case-level **platform** / **softwareVersion** in **Core Case Data Fields** alongside **CaseAsset**-first implementation; a fuller editorial pass could align that section with the current schema (optional cleanup only).
 - **EoSM** (**End of Software Maintenance**) and **partner optional for all types / never blocks create or update** are spelled out in `PROJECT_CONTEXT.md`, `HANDOFF_CURRENT_STATE.md`, `IMPLEMENTATION_DECISIONS.md`, and `PRODUCTION_NOTES.md`. **Quantity** is documented and implemented as **per `CaseAsset`**; case detail **Case summary** includes a null-safe **Total units (qty)** rollup. **`REQUEST_TYPE_INTAKE_HINT`** includes per-platform quantity for **EoVSS** / **EoSM** / **`ESS_MSS`** where relevant.
 - **Brand asset**: logo is **`public/branding/cisco-logo.svg`** (Commons-sourced wordmark). If your org requires **internal-only** brand files, overwrite that path with approved artwork and keep **`CiscoBrandLogo`** unchanged.

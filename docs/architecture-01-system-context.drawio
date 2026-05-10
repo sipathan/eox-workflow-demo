@@ -1,0 +1,49 @@
+<mxfile host="app.diagrams.net" modified="2026-05-05T00:00:00.000Z" agent="cursor" version="22.1.0">
+  <diagram id="context" name="System context">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="pool-users" value="Users (browser)" style="swimlane;horizontal=0;startSize=28;fillColor=#E8F4FC;strokeColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="200" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="cx" value="CX Ops / Platform Admin&#xa;(create IB, manage workflow)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="pool-users">
+          <mxGeometry x="20" y="40" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="other" value="Account / BU / Finance / Leadership&#xa;(scoped visibility)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="pool-users">
+          <mxGeometry x="20" y="140" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="pool-app" value="EoX Workflow Platform (this app)" style="swimlane;horizontal=0;startSize=28;fillColor=#FFF4CC;strokeColor=#D6B656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="280" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="app" value="Orchestration layer&#xa;• Cases, tasks, RBAC&#xa;• External refs (Quote/VAP/APAS)&#xa;• Salesforce IB via provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;" vertex="1" parent="pool-app">
+          <mxGeometry x="30" y="50" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="note-scope" value="Not execution engines for CCW, VAP, APAS — tracked as references only." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#FFF9E6;strokeColor=#CC9900;" vertex="1" parent="pool-app">
+          <mxGeometry x="30" y="200" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="pool-ext" value="External / integration" style="swimlane;horizontal=0;startSize=28;fillColor=#E6F5E6;strokeColor=#82B366;" vertex="1" parent="1">
+          <mxGeometry x="680" y="80" width="260" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="mock" value="Salesforce IB provider — MOCK&#xa;(default, deterministic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="pool-ext">
+          <mxGeometry x="30" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sf" value="Salesforce Issue Backlog&#xa;(real API — future)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;dashed=1;" vertex="1" parent="pool-ext">
+          <mxGeometry x="30" y="160" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="cx" target="app">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="other" target="app">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="create / query (today)" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="app" target="mock">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="SALESFORCE_IB_PROVIDER=salesforce&#xa;(scaffold / future)" style="endArrow=block;dashed=1;html=1;rounded=0;" edge="1" parent="1" source="app" target="sf">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

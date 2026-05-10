@@ -123,6 +123,9 @@ const ACTIVITY_ACTION_LABEL: Record<string, string> = {
   status_observed: "recorded status",
   draft_saved: "saved a draft",
   draft_created: "created a draft",
+  salesforce_ib_create_attempt: "attempted Salesforce IB case create",
+  salesforce_ib_created: "created a Salesforce IB case",
+  salesforce_ib_create_failed: "Salesforce IB create failed",
 };
 
 export function formatActivityAction(action: string): string {

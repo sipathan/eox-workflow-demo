@@ -27,6 +27,7 @@ import { BookingOutcomeForm } from "@/components/case/BookingOutcomeForm";
 import { PlatformAssetCostEditor } from "@/components/case/PlatformAssetCostEditor";
 import { TaskAssigneeChips } from "@/components/case/TaskAssigneeChips";
 import { TaskAssigneesEditor } from "@/components/case/TaskAssigneesEditor";
+import { SalesforceIbCaseSection } from "@/components/case/SalesforceIbCaseSection";
 import { TaskRowForm } from "@/components/case/TaskRowForm";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -34,6 +35,7 @@ import { PriorityBadge } from "@/components/ui/PriorityBadge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   canActOnUnownedTeamTask,
+  canTriggerSalesforceIbCaseCreation,
   canUpdateCase,
   canUpdateTask,
   hasAnyRole,
@@ -60,6 +62,13 @@ import {
 } from "@/lib/workflow/assignment-display";
 import { buildCaseAccessRow } from "@/lib/permissions/case-access-projection";
 import { mergedDirectAssigneeUserIds } from "@/lib/tasks/direct-assignees";
+import { isDemoMode } from "@/lib/env/demo-mode";
+import {
+  evaluateSalesforceIbCreationEligibility,
+  getSalesforceIbCardState,
+  hasFailedSalesforceIbReference,
+  mapEoXCaseToSalesforceIbPayload,
+} from "@/lib/integrations/salesforce-ib";
 
 function parseFlash(
   searchParams: { flash?: string; tone?: string } | undefined
@@ -165,6 +174,64 @@ export default async function CaseDetailPage(props: {
   const canAddComment = !readonly;
   const canAddAttachment = !readonly;
   const canEditReferences = !readonly;
+  const standardReferences = c.references.filter((r) => r.referenceType !== ExternalReferenceType.SALESFORCE_IB);
+  const salesforceIbReferences = c.references.filter((r) => r.referenceType === ExternalReferenceType.SALESFORCE_IB);
+  const primarySalesforceIbRef =
+    [...salesforceIbReferences].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
+  const salesforceIbEligibility = evaluateSalesforceIbCreationEligibility({
+    status: c.status,
+    customerName: c.customerName,
+    businessJustification: c.businessJustification,
+    assets: c.assets,
+    tasks: c.tasks,
+    references: c.references,
+  });
+  const canTriggerSalesforceIb = canTriggerSalesforceIbCaseCreation(user);
+  const showSalesforceIbCreate = canTriggerSalesforceIb && salesforceIbEligibility.canAttempt;
+  const salesforceIbBlockedForOperator =
+    canTriggerSalesforceIb && !salesforceIbEligibility.canAttempt ? salesforceIbEligibility.blockedReason : null;
+  const salesforceIbEligibleButNoPermission =
+    !canTriggerSalesforceIb && salesforceIbEligibility.canAttempt;
+  const salesforceIbStatusNote =
+    !salesforceIbEligibility.canAttempt && salesforceIbEligibility.blockedReason
+      ? salesforceIbEligibility.blockedReason
+      : null;
+  const salesforceIbRetry =
+    hasFailedSalesforceIbReference(c.references) && salesforceIbEligibility.canAttempt;
+  const salesforceIbCardState = getSalesforceIbCardState({
+    references: c.references,
+    eligibility: salesforceIbEligibility,
+    canTrigger: canTriggerSalesforceIb,
+  });
+  const demoMode = isDemoMode();
+  const salesforceIbPayloadPreview = demoMode
+    ? (() => {
+        const p = mapEoXCaseToSalesforceIbPayload({
+          case: c,
+          tasks: c.tasks,
+          assets: c.assets,
+          salesforceIbReferences,
+        });
+        return {
+          ...p,
+          requestType: String(p.requestType),
+          priority: String(p.priority),
+        } as Record<string, unknown>;
+      })()
+    : null;
+  const salesforceIbPrimarySnapshot = primarySalesforceIbRef
+    ? {
+        integrationState: primarySalesforceIbRef.integrationState,
+        externalStatus: primarySalesforceIbRef.externalStatus,
+        referenceId: primarySalesforceIbRef.referenceId,
+        externalKey: primarySalesforceIbRef.externalKey,
+        externalRecordUrl: primarySalesforceIbRef.externalRecordUrl,
+        externalSystemName: primarySalesforceIbRef.externalSystemName,
+        lastAttemptAtIso: primarySalesforceIbRef.lastAttemptAt?.toISOString() ?? null,
+        lastErrorMessage: primarySalesforceIbRef.lastErrorMessage,
+        rowCreatedAtIso: primarySalesforceIbRef.createdAt.toISOString(),
+      }
+    : null;
 
   const [users, teams] = await Promise.all([
     prisma.user.findMany({
@@ -904,8 +971,8 @@ export default async function CaseDetailPage(props: {
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">External references</h2>
         <div className="mt-3 space-y-3">
-          {c.references.length === 0 ? <p className="text-sm text-slate-500">None recorded.</p> : null}
-          {c.references.map((r) => (
+          {standardReferences.length === 0 ? <p className="text-sm text-slate-500">None recorded.</p> : null}
+          {standardReferences.map((r) => (
             <form key={r.id} action={upsertExternalReferenceAction} className="rounded-md border border-slate-200 bg-slate-50 p-3">
               <input type="hidden" name="caseId" value={c.id} />
               <input type="hidden" name="existingReferenceId" value={r.id} />
@@ -917,7 +984,7 @@ export default async function CaseDetailPage(props: {
                     </option>
                   ))}
                 </select>
-                <input name="referenceId" defaultValue={r.referenceId} disabled={!canEditReferences} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs font-mono" />
+                <input name="referenceId" defaultValue={r.referenceId ?? ""} disabled={!canEditReferences} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs font-mono" />
                 <select name="taskId" defaultValue={r.taskId ?? ""} disabled={!canEditReferences} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs">
                   <option value="">Case-level ref</option>
                   {sortedTasks.map((t) => (
@@ -970,6 +1037,20 @@ export default async function CaseDetailPage(props: {
           </form>
         </div>
       </section>
+
+      <SalesforceIbCaseSection
+        caseDbId={c.id}
+        cardState={salesforceIbCardState}
+        canTriggerAction={canTriggerSalesforceIb}
+        showCreateOrRetry={showSalesforceIbCreate}
+        isRetry={salesforceIbRetry}
+        demoMode={demoMode}
+        payloadPreview={salesforceIbPayloadPreview}
+        eligibilityBlockedReason={salesforceIbBlockedForOperator}
+        eligibleButNoPermission={salesforceIbEligibleButNoPermission}
+        viewerStatusNote={!canTriggerSalesforceIb ? salesforceIbStatusNote : null}
+        primaryRef={salesforceIbPrimarySnapshot}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

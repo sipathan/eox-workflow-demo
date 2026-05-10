@@ -136,6 +136,14 @@ export function isReadOnlyDemoUser(user: SessionUser): boolean {
 }
 
 /**
+ * Salesforce IB case creation (server + UI). CX Operations and Platform Admin only; never leadership read-only.
+ */
+export function canTriggerSalesforceIbCaseCreation(user: SessionUser): boolean {
+  if (isReadOnlyDemoUser(user)) return false;
+  return hasAnyRole(user, [RoleKey.CX_OPS, RoleKey.PLATFORM_ADMIN]);
+}
+
+/**
  * Users who see the **full** case portfolio under `canViewCase` (CX Ops, Platform Admin, Leadership).
  * Used to align list/home counts with “portfolio-wide” vs “scoped to my involvement” UX.
  */

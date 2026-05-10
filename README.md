@@ -28,6 +28,10 @@ Leadership-ready demo for queue-driven EoX request management:
 | `DEMO_MODE` | Optional. Set to exactly `true` to show the **demo persona switcher** in the signed-in dashboard header (see below). Any other value or unset = **disabled** (no switcher UI; server ignores persona-switch requests). |
 | `COOKIE_SECURE` | Set `true` behind HTTPS (typical EC2 behind TLS). |
 | `COOKIE_SAME_SITE` | `lax` (default), `strict`, or `none` (requires `COOKIE_SECURE=true`). |
+| `SALESFORCE_IB_PROVIDER` | Optional. `mock` (default) or `salesforce`. Mock is deterministic and needs no Salesforce network access. `salesforce` uses a typed scaffold: returns `NOT_CONFIGURED` until env keys are set, then `NOT_IMPLEMENTED` until a real API client exists. |
+| `SALESFORCE_IB_MOCK_STABILITY_SEED` | Optional. String mixed into mock Id generation so reseeds stay stable; change only if you need a new deterministic key space. |
+| `SALESFORCE_IB_MOCK_FAIL_FIRST_ATTEMPT_IDS` | Optional. Comma-separated public case ids (e.g. `EoVSS-2026-200015`) whose **first** IB create fails in mock mode; **retry** succeeds (for demo). Defaults to the seed scenario id when unset. |
+| `SALESFORCE_IB_MOCK_INSTANCE_URL` | Optional. Base URL for mock record links (default `https://demo.sf.example.com`). |
 
 Copy `.env.example` to `.env` and set values before running migrations or the app.
 

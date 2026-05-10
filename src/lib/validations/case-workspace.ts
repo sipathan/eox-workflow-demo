@@ -73,15 +73,33 @@ export const updateTaskSchema = z.object({
   notRequiredReason: z.string().max(2000).optional().transform((s) => s?.trim() || undefined),
 });
 
-export const upsertExternalReferenceSchema = z.object({
-  caseId: z.string().min(1),
-  referenceId: z.string().min(1).max(400),
-  referenceType: z.nativeEnum(ExternalReferenceType),
-  externalStatus: z.string().max(200).optional().transform((s) => s?.trim() || undefined),
-  notes: z.string().max(2000).optional().transform((s) => s?.trim() || undefined),
-  taskId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
-  existingReferenceId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
-});
+export const upsertExternalReferenceSchema = z
+  .object({
+    caseId: z.string().min(1),
+    referenceId: z
+      .string()
+      .max(400)
+      .optional()
+      .transform((s) => {
+        const t = s?.trim();
+        return t && t.length > 0 ? t : undefined;
+      }),
+    referenceType: z.nativeEnum(ExternalReferenceType),
+    externalStatus: z.string().max(200).optional().transform((s) => s?.trim() || undefined),
+    notes: z.string().max(2000).optional().transform((s) => s?.trim() || undefined),
+    taskId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
+    existingReferenceId: z.string().optional().transform((s) => (s?.trim() ? s : undefined)),
+  })
+  .superRefine((data, ctx) => {
+    if (data.referenceType === ExternalReferenceType.SALESFORCE_IB) return;
+    if (!data.referenceId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Reference ID is required.",
+        path: ["referenceId"],
+      });
+    }
+  });
 
 export const caseBookingUpdateSchema = z
   .object({
@@ -111,4 +129,8 @@ export const caseAssetCostsUpdateSchema = z.object({
   assetId: z.string().min(1),
   buCost: z.coerce.number().min(0).max(999_999_999.99),
   cxCost: z.coerce.number().min(0).max(999_999_999.99),
+});
+
+export const createSalesforceIbCaseSchema = z.object({
+  caseId: z.string().min(1),
 });

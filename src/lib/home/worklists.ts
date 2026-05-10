@@ -18,8 +18,8 @@ const TERMINAL: ReadonlySet<CaseStatus> = new Set([
   CaseStatus.Cancelled,
 ]);
 
-/** Pipeline / in-flight (excludes terminal; includes Draft). */
-function isNonTerminalStatus(status: CaseStatus): boolean {
+/** Pipeline / in-flight (excludes terminal; includes Draft). Aligns with reports `isActivePipelineStatus`. */
+export function isNonTerminalCaseStatus(status: CaseStatus): boolean {
   return !TERMINAL.has(status);
 }
 
@@ -56,7 +56,7 @@ export function isWorklistInvolvement(user: SessionUser, r: CaseListRow): boolea
 /** Non-terminal cases where `isWorklistInvolvement` is true (each case at most once; input is already deduped by query). */
 export function filterMyActiveCases(user: SessionUser, rows: CaseListRow[]): CaseListRow[] {
   return rows.filter((r) => {
-    if (!isNonTerminalStatus(r.status)) return false;
+    if (!isNonTerminalCaseStatus(r.status)) return false;
     return isWorklistInvolvement(user, r);
   });
 }

@@ -1,12 +1,12 @@
 # Handoff — current state
 
-Last updated: 2026-04-30 (**PostgreSQL** + Docker Compose pilot; Prisma migrations **`20260530120000_init_postgresql`** + **`20260531120000_task_assignees`**. Quantity is **per `CaseAsset`**; **Case summary** shows **Total units (qty)** = sum of set per-line quantities, **—** when none. **Platforms & equipment** table column **Quantity**. Intake partner block is partner-only. **Multi-assignee tasks** via **`TaskAssignee`**. **Seed:** **10** deterministic users (**4** CX, **6** general; **2** zero-workload personas with no cases/tasks but **`isActive`** for empty-state demos), **15** cases (**6** EoVSS incl. **`EoVSS-2026-200015`**, **5** EoSM, **4** ESS/MSS) — see **`README.md`** / **`prisma/seed.ts`**.)
+Last updated: 2026-05-08 (**PostgreSQL** + Docker Compose pilot; Prisma migrations **`20260530120000_init_postgresql`**, **`20260531120000_task_assignees`**, **`20260601120000_salesforce_ib_external_reference`**. Quantity is **per `CaseAsset`**; **Case summary** shows **Total units (qty)** = sum of set per-line quantities, **—** when none. **Platforms & equipment** table column **Quantity**. Intake partner block is partner-only. **Multi-assignee tasks** via **`TaskAssignee`**. **Salesforce Issue Backlog (IB)** Phase 1: structured **`ExternalReferenceType.SALESFORCE_IB`** + Case Detail card + **`createSalesforceIbCaseAction`** through **`getSalesforceIbProvider()`** (mock default). **Seed:** **10** deterministic users (**4** CX, **6** general; **2** zero-workload personas with no cases/tasks but **`isActive`** for empty-state demos), **15** cases (**6** EoVSS incl. **`EoVSS-2026-200015`**, **5** EoSM, **4** ESS/MSS) with **four** IB demo shapes — see **`README.md`** / **`prisma/seed.ts`** header.)
 
 ## What this repo is
 
 Local Next.js + Prisma + **PostgreSQL** demo for **EoVSS** / **EoSM** / **ESS/MSS** workflow (see `docs/PROJECT_CONTEXT.md`). Third bucket in code is **`RequestType.ESS_MSS`** (UI label **ESS/MSS**); public case IDs use prefix **`ESSMSS`**. **EoSM** = **End of Software Maintenance** (not Service Migration). **EoSM** marks the end of regular software maintenance / routine bug fixes; **security fixes** may continue per **EoVS / EoVSS** policy depending on product.
 
-**EC2 / Docker pilot:** `Dockerfile` + `docker-compose.yml` run **Next.js (production)** and **Postgres 16**; app entrypoint runs **`prisma migrate deploy`** then **`next start`**. The **runtime** image copies **`src/`** and **`tsconfig.json`** from the build stage so **`docker compose exec app npx prisma db seed`** works (`prisma/seed.ts` imports **`../src/lib/workflow/task-templates`**). Postgres uses a named volume and is published as **`5432:5432`** so **host** tools (e.g. `npx prisma`, `npm run dev` with `DATABASE_URL=...@localhost:5432/...`) work alongside the **app** container, which still connects via **`postgres:5432`** on the Compose network. For a locked-down server-only deploy, remove or override the `ports:` mapping. See **`README.md`** for env vars and exact commands.
+**EC2 / Docker pilot:** `Dockerfile` + `docker-compose.yml` run **Next.js (production)** and **Postgres 16**; app entrypoint runs **`prisma migrate deploy`** then **`next start`**. The **runtime** image copies **`src/`** and **`tsconfig.json`** from the build stage so **`docker compose exec app npx prisma db seed`** works (`prisma/seed.ts` imports **`../src/lib/workflow/task-templates`**). Postgres uses a named volume and is published as **`5432:5432`** so **host** tools (e.g. `npx prisma`, `npm run dev` with `DATABASE_URL=...@localhost:5432/...`) work alongside the **app** container, which still connects via **`postgres:5432`** on the Compose network. For a locked-down server-only deploy, remove or override the `ports:` mapping. **`SALESFORCE_IB_PROVIDER`** defaults to **`mock`** everywhere unless set — demos and pilots need **no** Salesforce connectivity. See **`README.md`** for env vars and exact commands.
 
 ## Data model (high level)
 
@@ -14,6 +14,7 @@ Local Next.js + Prisma + **PostgreSQL** demo for **EoVSS** / **EoSM** / **ESS/MS
 - **ESS/MSS (`ESS_MSS`)**: `essSupportSubtype` (`EssMssSupportSubtype`: hardware / software / both). Extra scalars: `migrationPlan` (required text on submit for this type), `migrationTimeline`, `targetReplacementProduct`, `hardwarePhysicalLocation`, `softwareDeploymentType`, `softwareProductFamily`, booleans for software eligibility signals (`softwareOnPremise`, `softwarePerpetualLicense`, `softwareIsApplicationSoftware`, `softwareNotIosIosXr`), `environmentIsProduction`, `essEligibilityAcknowledged`. MSS-specific workflow is **not** implemented yet; flags support review UX without hard-blocking product rules.
 - **CaseAsset**: One row per platform/SKU line (`platformName`, `serialNumbers`, `eolBulletinLink`, `hwLdosDate`, `softwareVersion`, optional **`quantity`** (non-negative int when set), `sortOrder`, **`buCost`**, **`cxCost`** as demo USD floats). **Line total** = BU + CX via `platformTotalCost` in `src/lib/cases/financials.ts` (not stored). Case-level **rollups** use `rollupCaseFinancials` (same file). Schema history lived in SQLite-era migrations; **current** Postgres migrations are **`20260530120000_init_postgresql`** and **`20260531120000_task_assignees`**.
 - **Task**: `caseAssetId` (optional), optional **`ownerId`** (legacy primary; kept in sync as **first** direct assignee when CX/Admin saves), `assignedTeamId`, `isRunnable`, `activatedAt`, optional **`notes`** (ESS/MSS eligibility rows ship template text here). **`TaskAssignee`**: many-to-many direct users on the **same** task row (`assignedAt`, optional **`assignedById`**). Default submitted rows: **`buildSubmittedCaseTaskRows`** in **`src/lib/workflow/task-templates.ts`** (request-type + **`essSupportSubtype`** aware; typically **no** individual assignees until CX sets them). Activation after edits: **`applyTaskActivationRules`** in **`src/lib/workflow/task-activation.ts`** (called from **`src/app/actions/case-workspace.ts`** after task updates).
+- **`ExternalReference`**: Legacy **`QUOTE` / `VAP` / `APAS`** rows remain manual reference tracking. **`SALESFORCE_IB`** rows carry **`integrationState`** (`ExternalReferenceIntegrationState`), optional **`referenceId`** (SF Id), **`externalKey`** (case number), **`externalRecordUrl`**, **`lastAttemptAt`**, **`lastErrorMessage`**, optional **`integrationMetadata`**. Salesforce IB is **not** edited through the generic external-reference pickers on Case Detail; it uses **`SalesforceIbCaseSection`** + server actions only.
 
 ## Public case ID
 
@@ -42,12 +43,13 @@ Format: **`{TYPE_TOKEN}-{YYYY}-{SUFFIX}`** where **`TYPE_TOKEN`** is derived fro
 
 ## Demo sign-in (`/` unsigned)
 
-- **`src/lib/auth/demo-accounts.ts`**: allow-listed emails match **all** seeded demo users (**10** accounts). **`src/app/actions/auth.ts`**: **`bcrypt.compare`** against **`User.passwordHash`** (seed password **`Demo123!`**); optional **`demoSwitchPersonaAction`** when **`DEMO_MODE=true`**. The home form includes user select + password; wrong credentials use the same generic error as unknown email (**`login=invalid`**). Add new seed emails to **`DEMO_LOGIN_ACCOUNTS`** or they cannot sign in.
+- **`src/lib/auth/demo-accounts.ts`**: allow-listed emails match **all** seeded demo users (**10** accounts). **`src/app/actions/auth.ts`**: **`bcrypt.compare`** against **`User.passwordHash`** (seed password **`Demo123!`**); optional **`demoSwitchPersonaAction`** when **`DEMO_MODE=true`**. On success, **`demoLoginAction`** and **`demoSwitchPersonaAction`** redirect to **`/`** (signed-in Home), not **`/cases`**. The home form includes user select + password; wrong credentials use the same generic error as unknown email (**`login=invalid`**). Add new seed emails to **`DEMO_LOGIN_ACCOUNTS`** or they cannot sign in.
 
 ## Home (`/`)
 
-- **`src/app/page.tsx`**: signed-in branch loads **`listCasesVisibleToUser`** then **`HomeWorkDashboard`** inside **`DashboardShell`**; above worklists, **`SignedInHomeBrandBanner`** (`src/components/branding/`) — compact hero: logo, **EoX Workflow Management Platform**, **Internal demo** badge, value line **Digitizing EoVSS / EoSM / ESS/MSS Request Management**. **Unsigned** branch: page-level sky accent strip, logo + product line, **Demo workspace** heading, sign-in card with thin sky top rule (**`CiscoBrandLogo`** → **`/branding/cisco-logo.svg`**).
-- **Worklists** (`src/lib/home/worklists.ts` + **`userHasOperationalTaskTie`** / **`isUserDirectTaskAssignee`** in **`src/lib/tasks/direct-assignees.ts`**): **My active cases** = non-terminal and **`isWorklistInvolvement`** (same task-stake rules as **`myWorkCases`** on **`/cases`**: case owner, requester, case team, or **direct task assignee** / task team via shared helpers; CX / Platform Admin / Leadership = full visible portfolio). **Cases awaiting my input** = at least one open runnable task where **`canUpdateTask`** (uses **`TaskAccessRow.assigneeUserIds`** including multi-assignee). **Cases returned for more information** = `Awaiting Info` with involvement, or active **`AdditionalInfoRequest`** with **`userRelevantToInfoReturn`**. **`dedupeCasesById`** before cap: **one row per case per section** even if the user is assignee on multiple tasks. Each list capped at **10** rows. **`HomeWorkDashboard`** copy documents multi-assignee behavior. Signed-in Home intro (`page.tsx`) mentions multi-assignee scoping.
+- **`src/app/page.tsx`**: signed-in branch loads **`listCasesVisibleToUser`** (same RBAC as list/detail), computes **`buildHomeKpiCounts`** (`src/lib/home/home-kpis.ts`), renders **`HomeKpiCards`** then **`HomeWorkDashboard`** inside **`DashboardShell`**; main column uses **`max-w-6xl`**. Above worklists, **`SignedInHomeBrandBanner`** (`src/components/branding/`) — compact hero: logo, **EoX Workflow Management Platform**, **Internal demo** badge, value line **Digitizing EoVSS / EoSM / ESS/MSS Request Management**. Header keeps **Home** title + signed-in identity line only (no RBAC explainer paragraph). **Unsigned** branch: page-level sky accent strip, logo + product line, **Demo workspace** heading, sign-in card with thin sky top rule (**`CiscoBrandLogo`** → **`/branding/cisco-logo.svg`**).
+- **Home KPI strip** (**HomeKpiCards** + **buildHomeKpiCounts**): four equal-height metric cards (**Active cases**, **Pending your input**, **Pending input from others**, **Visible cases**). **Active** = visible cases whose status is not **`Closed`**, **`Rejected`**, or **`Cancelled`** (includes **`Draft`**; aligns with reports **active pipeline** / **`isNonTerminalCaseStatus`** in **`worklists.ts`**). **Visible** = count of **`listCasesVisibleToUser`**. **Pending your input** = distinct active (non-terminal) visible cases where **`filterCasesAwaitingMyInput`** matches (same **`canUpdateTask`** / multi-assignee rules as the **Cases awaiting my input** worklist). **Pending input from others** = active visible cases that have at least one **`isRunnable`** task with status neither **`Completed`** nor **`NotRequired`**, and that are **not** in the pending-your-input set (case-level; no double-count). Read-only leadership: pending-your-input count is **0** by design (**`filterCasesAwaitingMyInput`**).
+- **Worklists** (`src/lib/home/worklists.ts` + **`userHasOperationalTaskTie`** / **`isUserDirectTaskAssignee`** in **`src/lib/tasks/direct-assignees.ts`**): **My active cases** = non-terminal and **`isWorklistInvolvement`** (same task-stake rules as **`myWorkCases`** on **`/cases`**: case owner, requester, case team, or **direct task assignee** / task team via shared helpers; CX / Platform Admin / Leadership = full visible portfolio). **Cases awaiting my input** = at least one open runnable task where **`canUpdateTask`** (uses **`TaskAccessRow.assigneeUserIds`** including multi-assignee). **Cases returned for more information** = `Awaiting Info` with involvement, or active **`AdditionalInfoRequest`** with **`userRelevantToInfoReturn`**. **`dedupeCasesById`** before cap: **one row per case per section** even if the user is assignee on multiple tasks. Each list capped at **10** rows. **`HomeWorkDashboard`** section descriptions still document portfolio vs scoped behavior.
 - **Case status distribution**: **`CaseStatusDistribution`** — horizontal bars from **`caseStatusDistribution(visibleCases)`**. When **`canViewReports`** is true, each row is a **link** to **`/reports?status=…`** (same status filter as the reports GET form). Otherwise rows are plain text.
 
 ## Case detail UI
@@ -60,11 +62,74 @@ Format: **`{TYPE_TOKEN}-{YYYY}-{SUFFIX}`** where **`TYPE_TOKEN`** is derived fro
   - **Activity log**: Each entry leads with **`ActivityLog.user`** display name, then a human verb from **`formatActivityAction`** (`src/lib/ui/format.ts` — e.g. `task_updated` → “updated a task”), then **`details`**. Copy notes that the named user is who performed the action at save time.
   - **Platform financials**: Card grid per asset via **`PlatformAssetCostEditor`** — **after** **Workflow / tasks**, **before** **Booking outcome** (only when **`assets.length > 0`**); live line total (BU+CX), optional 43% CX suggestion, **Save** posts to `updateCaseAssetCostsAction` when `canUpdateCase`; read-only cards otherwise. Editors remount when stored **`buCost`/`cxCost`** change (**React `key`** = asset id + costs). Copy points to **Case summary** for rolled-up totals. Standalone **`CaseFinancialSummary`** component is **unused** on this route (totals inlined in summary); kept in **`src/components/case/`** for reuse.
   - **Booking outcome**: Violet-bordered section — **after** workflow and platform financials. Read-only **status** always; **Not booked reason** snapshot **only** if status is `NOT_BOOKED` or `PASSED_OVER` (empty reason shows **`— (no reason recorded)`**, aligned with reports lost-opportunity labeling). Edits use **`BookingOutcomeForm`** with a **`key`** tied to server status/reason. `updateCaseQuoteBookingAction` + Zod unchanged.
-  - External reference task pickers use the same **work item** labels.
+  - External reference task pickers use the same **work item** labels (QUOTE/VAP/APAS only — **not** Salesforce IB).
+  - **Salesforce IB Case** (`src/components/case/SalesforceIbCaseSection.tsx`): Orchestration-only surface — integration badge (Not Created / Ready / Created / Failed), SF identifiers when present, **Create** / **Retry** for **CX Ops** + **Platform Admin** when **`evaluateSalesforceIbCreationEligibility`** passes (submitted pipeline, Intake Validation completed, customer + justification + ≥1 platform line). Wired by **`createSalesforceIbCaseAction`** in **`src/app/actions/case-workspace.ts`**. When **`DEMO_MODE=true`**, optional expandable **provider payload** preview for narrator/debug.
+
+## Salesforce IB — Phase 1 vs later production
+
+This app remains an **orchestration layer**: it records linkage and drives **one-shot create/retry** through code behind **`getSalesforceIbProvider()`**. It does **not** run CCW/VAP/APAS/Salesforce workflow execution inside Salesforce.
+
+**In Phase 1**
+
+- Persist **`SALESFORCE_IB`** **`ExternalReference`** rows + **`ActivityLog`** (`salesforce_ib_create_attempt`, `salesforce_ib_created`, `salesforce_ib_create_failed`).
+- **Mock provider** (default): deterministic SF-like Id and case number from public case id; optional **fail-first** id list for retry demos; **no outbound HTTP**.
+- **`salesforce`** provider kind: validates env keys only, returns **`NOT_CONFIGURED`** or **`NOT_IMPLEMENTED`** — safe guardrail if someone flips the flag early.
+
+**Intentionally out of scope (Phase 1)**
+
+- OAuth/token refresh, Composite Case API implementation, webhooks, polling Salesforce for status, bidirectional sync.
+
+**How mock mode works (local + EC2)**
+
+- **`SALESFORCE_IB_PROVIDER` unset or `mock`**: Node loads **`createMockSalesforceIbProvider`** (`src/lib/integrations/salesforce-ib/mock-provider.ts`). Same code path in **`npm run dev`**, **`npm run start`**, and the Docker Compose **`app`** container — only **`DATABASE_URL`** / **`NODE_ENV`** differ per environment.
+- **`SALESFORCE_IB_MOCK_STABILITY_SEED`**: optional string blended into mock Id derivation so reseeds stay repeatable.
+- **`SALESFORCE_IB_MOCK_FAIL_FIRST_ATTEMPT_IDS`**: comma-separated **`caseId`** values whose **first** create fails; **retry** succeeds (seed **`EoVSS-2026-200015`** uses this story).
+- **`SALESFORCE_IB_MOCK_INSTANCE_URL`**: base for fake deep links in mock responses.
+
+**Plugging in the real Salesforce adapter later**
+
+- Implement **`createIbCase`** inside **`createSalesforceRestProvider`** (`src/lib/integrations/salesforce-ib/salesforce-rest-provider.ts`) (or swap factory wiring — **`src/lib/integrations/salesforce-ib/factory.ts`** already selects by **`getSalesforceIbProviderKind()`**).
+- Set **`SALESFORCE_IB_PROVIDER=salesforce`** and populate **`SALESFORCE_INSTANCE_URL`**, **`SALESFORCE_CLIENT_ID`**, **`SALESFORCE_CLIENT_SECRET`**, **`SALESFORCE_USERNAME`**, **`SALESFORCE_PASSWORD`** (names reserved in code today).
+- **Unchanged** when this lands: eligibility checks, RBAC, **`mapEoXCaseToSalesforceIbPayload`**, Case Detail UX structure, idempotent **read-before-write** around **`ExternalReference`**, and activity semantics — only the provider body performs HTTP.
+
+### Environment variables (Salesforce IB + demo/session)
+
+| Variable | Role |
+|----------|------|
+| **`DEMO_MODE`** | Exactly **`true`** enables header persona switcher + relaxed persona-switch server action; unset/other = off (`src/lib/env/demo-mode.ts`). |
+| **`COOKIE_SECURE`** | **`true`** behind HTTPS (typical EC2 pilot); aligns cookie flags in **`src/app/actions/auth.ts`**. |
+| **`COOKIE_SAME_SITE`** | **`lax`** default; **`strict`** / **`none`** when appropriate (**`none`** requires **`COOKIE_SECURE=true`**). |
+| **`SALESFORCE_IB_PROVIDER`** | **`mock`** (default) or **`salesforce`** (`src/lib/integrations/salesforce-ib/env.ts`). |
+| **`SALESFORCE_IB_MOCK_STABILITY_SEED`** | Optional mock Id stability string. |
+| **`SALESFORCE_IB_MOCK_FAIL_FIRST_ATTEMPT_IDS`** | Optional comma-separated public case ids for forced first-failure in mock. |
+| **`SALESFORCE_IB_MOCK_INSTANCE_URL`** | Optional mock deep-link base URL. |
+| **`SALESFORCE_INSTANCE_URL`** · **`SALESFORCE_CLIENT_ID`** · **`SALESFORCE_CLIENT_SECRET`** · **`SALESFORCE_USERNAME`** · **`SALESFORCE_PASSWORD`** | Reserved for future REST/OAuth implementation (`SALESFORCE_REST_CONFIG_KEYS` in **`salesforce-rest-provider.ts`**); no live calls today. |
+
+Full table including **`DATABASE_URL`** / **`SESSION_SECRET`** remains in **`README.md`**.
+
+### Run / reseed commands (unchanged for IB)
+
+IB adds **no** new npm scripts. After pulling migrations:
+
+1. **`npx prisma migrate deploy`** (or **`npm run db:migrate`** during schema work).
+2. **`npm run db:seed`** — additive demo load on an empty or existing DB (does **not** wipe).
+3. **`npm run db:reset`** or **`./scripts/demo-reset-local.sh`** — full wipe + migrate + seed (local).
+4. Compose pilot: **`docker compose exec app npx prisma migrate reset --force`** or **`./scripts/demo-reset-docker.sh`** — same outcome inside **`app`**.
+
+Console closes with a line naming IB demo cases — cross-check against **`prisma/seed.ts`** header table.
 
 ## Seed
 
 - `prisma/seed.ts`: **10** users — **CX:** `cx.primary@local` (Jordan: CX + Account + Platform admin), `cx.priya@local`, `cx.luis@local`, `cx.inactive@local` *(no seeded workload)*; **general:** `sales.demo@local` (Alex), `account.maya@local`, `bu.demo@local`, `finance.demo@local`, `leader.demo@local`, `account.inactive@local` *(no seeded workload)*. **15** cases: **`EoVSS-2026-200001`–`200005`**, **`EoVSS-2026-200015`**, **`EoSM-2026-200006`–`200010`** (includes **Draft** `EoSM-2026-200010` for Maya **created-by** only), **`ESSMSS-2026-200011`–`200014`**. Teams: **CX Ops Global**, **BU Review Queue — AMER**, **Finance Approvers**, **Leadership**, **Platform Admin**. Multi-assignee on select tasks; refs QUOTE/VAP/APAS; comment + attachment on **`EoVSS-2026-200001`**. Zero-workload users stay **`isActive: true`** so sessions work; they have **no** cases as requester and **no** task assignee rows.
+
+**Salesforce IB seed scenarios** (mock provider; see file header in **`prisma/seed.ts`**):
+
+| Public case id | IB shape |
+|----------------|----------|
+| **`EoVSS-2026-200001`** | **`CREATED`** + post-seed **`ActivityLog`** attempt/success |
+| **`EoSM-2026-200006`** | **`READY`** (no SF Id yet) |
+| **`EoVSS-2026-200015`** | **`FAILED`** + attempt/failure activity; **Retry** succeeds |
+| **`EoSM-2026-200008`** | **No** IB row — live **Create** demo for CX users |
 
 ## Reports dashboard (`/reports`)
 
@@ -126,7 +191,8 @@ The container already has `DATABASE_URL` pointing at the `postgres` service; mig
 - [ ] `SESSION_SECRET` is set to **32+** characters in `.env` (local) or Compose env (EC2).
 - [ ] Optional pilot UX: `DEMO_MODE=true` only if you want the header persona switcher (see `README.md`).
 - [ ] Browser: new private window or **Sign out** so stale sessions are not confused after a reset.
-- [ ] Smoke: sign in as `cx.primary@local` with **`Demo123!`** → **Cases** shows seeded public IDs (e.g. `EoVSS-2026-200001`).
+- [ ] Smoke: sign in as `cx.primary@local` with **`Demo123!`** → lands on **Home** (`/`); open **Cases** from the nav to see seeded public IDs (e.g. `EoVSS-2026-200001`).
+- [ ] Optional IB smoke (**mock**, default): open **`EoSM-2026-200008`** → **Salesforce IB Case** → **Create** → row moves to **Created** with deterministic mock Id; open **`EoVSS-2026-200015`** → **Retry** after failed state.
 
 ## Commands after pull
 

@@ -1,6 +1,7 @@
 import { demoLoginAction } from "@/app/actions/auth";
 import { SignedInHomeBrandBanner } from "@/components/branding/SignedInHomeBrandBanner";
 import { CiscoBrandLogo } from "@/components/branding/CiscoBrandLogo";
+import { HomeKpiCards } from "@/components/home/HomeKpiCards";
 import { HomeWorkDashboard } from "@/components/home/HomeWorkDashboard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { DashboardShell } from "@/components/layout/DashboardShell";
@@ -8,6 +9,7 @@ import { DEMO_LOGIN_ACCOUNTS } from "@/lib/auth/demo-accounts";
 import { getSessionUser } from "@/lib/auth/session";
 import { isDemoMode } from "@/lib/env/demo-mode";
 import { listCasesVisibleToUser } from "@/lib/cases/queries";
+import { buildHomeKpiCounts } from "@/lib/home/home-kpis";
 import { canViewReports } from "@/lib/rbac";
 
 export default async function Home({
@@ -19,11 +21,12 @@ export default async function Home({
   const loginErr = sp.login;
   const user = await getSessionUser();
   const visibleCases = user != null ? await listCasesVisibleToUser(user) : [];
+  const homeKpis = user != null ? buildHomeKpiCounts(user, visibleCases) : null;
 
   if (user) {
     return (
       <DashboardShell user={user} demoMode={isDemoMode()}>
-        <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+        <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
           <SignedInHomeBrandBanner />
 
           <header className="space-y-2 border-b border-slate-200/80 pb-5">
@@ -32,15 +35,9 @@ export default async function Home({
               Signed in as <span className="font-medium text-slate-900">{user.name}</span>{" "}
               <span className="text-slate-500">({user.email})</span>
             </p>
-            <p className="max-w-2xl text-xs leading-relaxed text-slate-500">
-              Worklists follow role rules: CX sees all cases; others see requests they created or tasks they are on
-              (including multi-assignee). Use the left navigation for Cases, Create request, and Reports (when
-              available). Open any row for the full case workspace (read-only for leadership where applicable).{" "}
-              <span className="font-medium text-slate-600">
-                You currently have {visibleCases.length} case{visibleCases.length === 1 ? "" : "s"} visible under RBAC.
-              </span>
-            </p>
           </header>
+
+          {homeKpis ? <HomeKpiCards counts={homeKpis} /> : null}
 
           {loginErr === "invalid" ? (
             <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">

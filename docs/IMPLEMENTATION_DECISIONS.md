@@ -73,7 +73,8 @@
 ## Demo login (local)
 
 - **`DEMO_LOGIN_ACCOUNTS`** in **`src/lib/auth/demo-accounts.ts`** lists every seeded demo email (labels for the dropdown). It **must stay in sync** with **`prisma/seed.ts`** — new seed users are not sign-in-capable until added here.
-- **`demoLoginAction`** (`src/app/actions/auth.ts`): normalize email, require **`isAllowedDemoLoginEmail`**, load user with **`passwordHash`**, verify with **`bcrypt.compare`** against the submitted password, then **`setSessionCookie`**. Failures redirect with a **single generic** query flag (`login=invalid`) to avoid account enumeration.
+- **`demoLoginAction`** (`src/app/actions/auth.ts`): normalize email, require **`isAllowedDemoLoginEmail`**, load user with **`passwordHash`**, verify with **`bcrypt.compare`** against the submitted password, then **`setSessionCookie`**. On success, redirect to **`/`** (Home). Failures redirect with a **single generic** query flag (`login=invalid`) to avoid account enumeration.
+- **`demoSwitchPersonaAction`**: when **`DEMO_MODE=true`**, successful switch re-issues the session and redirects to **`/`** (Home); when demo mode is off or the target email is invalid/inactive, redirect stays **`/`** (session unchanged except on successful switch).
 - Unsigned **`/`** form: user select + **password** field (all seeded accounts use **`Demo123!`** per README).
 
 ## PostgreSQL + Docker Compose (internal pilot)
@@ -127,6 +128,6 @@
 
 - **Logo file**: **`public/branding/cisco-logo.svg`** — Cisco wordmark **SVG** from [Wikimedia Commons — File:Cisco_logo.svg](https://commons.wikimedia.org/wiki/File:Cisco_logo.svg) (vendored copy; comply with Commons license + Cisco trademark policy for your use case). **`CiscoBrandLogo`** loads **`/branding/cisco-logo.svg`** with intrinsic **`width`/`height`** from the asset (`72×38`), **`object-contain`**, and **`alt="Cisco"`**. See **`public/branding/README.md`** for source URL and replacement notes.
 - **Shell**: **`DashboardSidebar`** carries logo + full product title + compact subtitle + user; **`DashboardShell`** main pane is **`bg-white`** for a clean operational canvas.
-- **Signed-in Home**: **`SignedInHomeBrandBanner`** — restrained card (top gradient rule, white body, sky badge) so the hero does not dominate worklists.
+- **Signed-in Home**: **`SignedInHomeBrandBanner`** — restrained card (top gradient rule, white body, sky badge) so the hero does not dominate worklists. **KPI strip**: **`buildHomeKpiCounts`** (`src/lib/home/home-kpis.ts`) over **`listCasesVisibleToUser`** — reuses **`isNonTerminalCaseStatus`** / **`filterCasesAwaitingMyInput`** / **`dedupeCasesById`** from **`worklists.ts`**; **open task work** for the “pending from others” denominator uses **`isRunnable`** plus task status not **`Completed`** / **`NotRequired`** (same gate as the awaiting-input worklist tasks). **`HomeKpiCards`** — responsive grid (1 / 2 / 4 columns), no charts in that strip.
 - **Login (`/` unsigned)**: Accent strip, logo + product copy, seeded-user dropdown + password (see **Demo login (local)** above).
 - **Metadata** (`root layout`): title/description aligned with product naming for browser chrome.

@@ -5,6 +5,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   CaseStatus,
+  ExternalReferenceIntegrationState,
+  ExternalReferenceType,
+  Prisma,
   QuoteBookingStatus,
   RoleKey,
   TaskStatus,
@@ -14,6 +17,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { applyTaskActivationRules } from "@/lib/workflow/task-activation";
 import {
+  canTriggerSalesforceIbCaseCreation,
   canUpdateCase,
   canUpdateTask,
   canViewCase,
@@ -31,12 +35,20 @@ import {
   caseAssignmentUpdateSchema,
   caseBookingUpdateSchema,
   caseStatusUpdateSchema,
+  createSalesforceIbCaseSchema,
   createTaskSchema,
   updateTaskSchema,
   upsertExternalReferenceSchema,
 } from "@/lib/validations/case-workspace";
 import { normalizeMoneyInput } from "@/lib/cases/financials";
 import { buildCaseAccessRow } from "@/lib/permissions/case-access-projection";
+import { SALESFORCE_EXTERNAL_SYSTEM_NAME } from "@/lib/external-references/integration-reference";
+import {
+  evaluateSalesforceIbCreationEligibility,
+  getSalesforceIbProvider,
+  hasSuccessfulSalesforceIbReference,
+  mapEoXCaseToSalesforceIbPayload,
+} from "@/lib/integrations/salesforce-ib";
 
 const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
   Draft: [CaseStatus.Submitted, CaseStatus.Cancelled],
@@ -455,7 +467,7 @@ export async function upsertExternalReferenceAction(formData: FormData): Promise
       where: { id: payload.existingReferenceId },
       data: {
         referenceType: payload.referenceType,
-        referenceId: payload.referenceId,
+        referenceId: payload.referenceId ?? null,
         taskId: payload.taskId ?? null,
         externalStatus: payload.externalStatus ?? null,
         notes: payload.notes ?? null,
@@ -472,7 +484,7 @@ export async function upsertExternalReferenceAction(formData: FormData): Promise
       data: {
         caseId,
         referenceType: payload.referenceType,
-        referenceId: payload.referenceId,
+        referenceId: payload.referenceId ?? null,
         taskId: payload.taskId ?? null,
         externalStatus: payload.externalStatus ?? null,
         notes: payload.notes ?? null,
@@ -600,5 +612,164 @@ export async function updateCaseAssetCostsAction(formData: FormData): Promise<vo
   revalidatePath("/cases");
   revalidatePath("/");
   goCase(caseId, "Platform costs updated.");
+}
+
+export async function createSalesforceIbCaseAction(formData: FormData): Promise<void> {
+  const raw = parseFormData(formData);
+  const fallbackCaseId = raw.caseId ?? "";
+  const parsed = createSalesforceIbCaseSchema.safeParse(raw);
+  if (!parsed.success) {
+    goCase(fallbackCaseId, parsed.error.issues[0]?.message ?? "Invalid request.", "error");
+  }
+  const { caseId } = parsed.data;
+  const { user } = await getCaseOrRedirect(caseId);
+  if (!canTriggerSalesforceIbCaseCreation(user)) {
+    goCase(caseId, "Only CX Operations or Platform Admin can create a Salesforce IB case.", "error");
+  }
+
+  const full = await prisma.case.findUnique({
+    where: { id: caseId },
+    include: {
+      tasks: { select: { type: true, status: true } },
+      references: true,
+      assets: { orderBy: { sortOrder: "asc" }, select: { platformName: true } },
+    },
+  });
+  if (!full) goCase(caseId, "Case not found.", "error");
+
+  const eligibility = evaluateSalesforceIbCreationEligibility({
+    status: full.status,
+    customerName: full.customerName,
+    businessJustification: full.businessJustification,
+    assets: full.assets,
+    tasks: full.tasks,
+    references: full.references,
+  });
+  if (!eligibility.canAttempt) {
+    goCase(caseId, eligibility.blockedReason ?? "Cannot create Salesforce IB case.", "error");
+  }
+
+  const latestIbRows = await prisma.externalReference.findMany({
+    where: { caseId, referenceType: ExternalReferenceType.SALESFORCE_IB },
+    select: { referenceType: true, integrationState: true, referenceId: true },
+  });
+  if (hasSuccessfulSalesforceIbReference(latestIbRows)) {
+    goCase(caseId, "A Salesforce IB case is already linked for this case.", "ok");
+  }
+
+  const ibRefs = full.references.filter((r) => r.referenceType === ExternalReferenceType.SALESFORCE_IB);
+  const payload = mapEoXCaseToSalesforceIbPayload({
+    case: full,
+    tasks: full.tasks,
+    assets: full.assets,
+    salesforceIbReferences: ibRefs,
+  });
+
+  const isRetry = payload.priorFailedAttempt;
+  await logActivity(
+    caseId,
+    user.id,
+    "salesforce_ib_create_attempt",
+    `${isRetry ? "retry" : "initial"} | ${full.caseId}`
+  );
+
+  const provider = getSalesforceIbProvider();
+  const attemptedAt = new Date();
+  const result = await provider.createIbCase(payload);
+
+  const existingIb = await prisma.externalReference.findFirst({
+    where: { caseId, referenceType: ExternalReferenceType.SALESFORCE_IB },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const integrationMetadata =
+    result.rawResponse != null ? (result.rawResponse as Prisma.InputJsonValue) : undefined;
+
+  if (result.ok) {
+    const data: Prisma.ExternalReferenceUpdateInput = {
+      referenceType: ExternalReferenceType.SALESFORCE_IB,
+      referenceId: result.salesforceRecordId,
+      externalKey: result.salesforceCaseNumber,
+      externalSystemName: SALESFORCE_EXTERNAL_SYSTEM_NAME,
+      integrationState: ExternalReferenceIntegrationState.CREATED,
+      externalRecordUrl: result.recordUrl,
+      externalStatus: "Created",
+      lastAttemptAt: attemptedAt,
+      lastErrorMessage: null,
+      ...(integrationMetadata !== undefined ? { integrationMetadata } : {}),
+    };
+    if (existingIb) {
+      await prisma.externalReference.update({ where: { id: existingIb.id }, data });
+    } else {
+      await prisma.externalReference.create({
+        data: {
+          caseId,
+          referenceType: ExternalReferenceType.SALESFORCE_IB,
+          referenceId: result.salesforceRecordId,
+          externalKey: result.salesforceCaseNumber,
+          externalSystemName: SALESFORCE_EXTERNAL_SYSTEM_NAME,
+          integrationState: ExternalReferenceIntegrationState.CREATED,
+          externalRecordUrl: result.recordUrl,
+          externalStatus: "Created",
+          lastAttemptAt: attemptedAt,
+          lastErrorMessage: null,
+          notes: null,
+          ...(integrationMetadata !== undefined ? { integrationMetadata } : {}),
+        },
+      });
+    }
+    await logActivity(
+      caseId,
+      user.id,
+      "salesforce_ib_created",
+      `SF Case ${result.salesforceCaseNumber} | ${result.salesforceRecordId}`
+    );
+    revalidatePath(casePath(caseId));
+    revalidatePath("/cases");
+    revalidatePath("/");
+    goCase(caseId, "Salesforce IB case created (via integration provider).");
+  } else {
+    const failData: Prisma.ExternalReferenceUpdateInput = {
+      referenceId: null,
+      externalKey: null,
+      externalRecordUrl: null,
+      externalSystemName: SALESFORCE_EXTERNAL_SYSTEM_NAME,
+      integrationState: ExternalReferenceIntegrationState.FAILED,
+      externalStatus: null,
+      lastAttemptAt: attemptedAt,
+      lastErrorMessage: result.errorMessage,
+      ...(integrationMetadata !== undefined ? { integrationMetadata } : {}),
+    };
+    if (existingIb) {
+      await prisma.externalReference.update({ where: { id: existingIb.id }, data: failData });
+    } else {
+      await prisma.externalReference.create({
+        data: {
+          caseId,
+          referenceType: ExternalReferenceType.SALESFORCE_IB,
+          referenceId: null,
+          externalKey: null,
+          externalRecordUrl: null,
+          externalSystemName: SALESFORCE_EXTERNAL_SYSTEM_NAME,
+          integrationState: ExternalReferenceIntegrationState.FAILED,
+          externalStatus: null,
+          lastAttemptAt: attemptedAt,
+          lastErrorMessage: result.errorMessage,
+          notes: null,
+          ...(integrationMetadata !== undefined ? { integrationMetadata } : {}),
+        },
+      });
+    }
+    await logActivity(
+      caseId,
+      user.id,
+      "salesforce_ib_create_failed",
+      `${result.errorCode}: ${result.errorMessage.slice(0, 240)}`
+    );
+    revalidatePath(casePath(caseId));
+    revalidatePath("/cases");
+    revalidatePath("/");
+    goCase(caseId, result.errorMessage, "error");
+  }
 }
 

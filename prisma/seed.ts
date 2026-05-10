@@ -2,8 +2,19 @@
  * Deterministic demo seed: **10 users** (4 CX, 6 general; **8 with workload**, **2 with zero assignments**), **15 cases**.
  * Password: Demo123! — see README. “Inactive” personas (`cx.inactive@local`, `account.inactive@local`) have **no** cases
  * and **no** task rows but stay **`isActive: true`** so sign-in and empty states work with current session code.
+ *
+ * **Salesforce IB (mock provider)** — seeded refs + activity logs:
+ * | Case | Role |
+ * |------|------|
+ * | `EoVSS-2026-200001` | IB **Created** + attempt/success **ActivityLog** trail |
+ * | `EoSM-2026-200006` | IB **Ready** (no SF Id); EoSM ladder intact |
+ * | `EoVSS-2026-200015` | IB **Failed** + attempt/failure **ActivityLog**; **Retry** succeeds (`priorFailedAttempt`) |
+ * | `EoSM-2026-200008` | No IB row — CX (**Jordan**, **Priya**, **Luis**) demos **Create IB case** live |
+ *
+ * EoVSS / EoSM / ESS case mix unchanged apart from these IB rows.
  */
 import {
+  Prisma,
   PrismaClient,
   RoleKey,
   TeamType,
@@ -13,6 +24,7 @@ import {
   TaskType,
   TaskStatus,
   ExternalReferenceType,
+  ExternalReferenceIntegrationState,
   QuoteBookingStatus,
   EssMssSupportSubtype,
 } from "@prisma/client";
@@ -283,9 +295,17 @@ async function main(): Promise<void> {
     tasks: TaskSeed[];
     refs?: Array<{
       type: ExternalReferenceType;
-      referenceId: string;
+      referenceId: string | null;
       externalStatus?: string;
       taskIndex?: number;
+      externalSystemName?: string | null;
+      integrationState?: ExternalReferenceIntegrationState | null;
+      externalKey?: string | null;
+      externalRecordUrl?: string | null;
+      lastAttemptAt?: Date | null;
+      lastErrorMessage?: string | null;
+      integrationMetadata?: Prisma.InputJsonValue | null;
+      notes?: string | null;
     }>;
   };
 
@@ -420,6 +440,23 @@ async function main(): Promise<void> {
       refs: [
         { type: ExternalReferenceType.QUOTE_ID, referenceId: "QTE-ENT-2026-889120", externalStatus: "Draft" },
         { type: ExternalReferenceType.VAP_ID, referenceId: "VAP-AMER-44102", externalStatus: "Queued" },
+        {
+          type: ExternalReferenceType.SALESFORCE_IB,
+          referenceId: "5006900000MERD1EAA",
+          externalKey: "16310418",
+          externalSystemName: "Salesforce",
+          integrationState: ExternalReferenceIntegrationState.CREATED,
+          externalRecordUrl:
+            "https://example.my.salesforce.com/lightning/r/Case/5006900000MERD1EAA/view",
+          externalStatus: "Working — CX triage",
+          lastAttemptAt: new Date("2026-01-10T16:00:00.000Z"),
+          integrationMetadata: {
+            demo: true,
+            provider: "mock",
+            customer: "Meridian Health Systems",
+            correlation: "EoVSS-2026-200001",
+          },
+        },
       ],
     },
     {
@@ -847,7 +884,24 @@ async function main(): Promise<void> {
           assignedTeamId: cxOpsTeam.id,
         },
       ],
-      refs: [{ type: ExternalReferenceType.QUOTE_ID, referenceId: "QTE-FIN-2026-330901", externalStatus: "In progress" }],
+      refs: [
+        { type: ExternalReferenceType.QUOTE_ID, referenceId: "QTE-FIN-2026-330901", externalStatus: "In progress" },
+        {
+          type: ExternalReferenceType.SALESFORCE_IB,
+          referenceId: null,
+          externalSystemName: "Salesforce",
+          integrationState: ExternalReferenceIntegrationState.READY,
+          notes:
+            "IB shell reserved in orchestration — CX to trigger provider submit after Finance checkpoint on quote row.",
+          lastAttemptAt: new Date("2026-01-11T14:30:00.000Z"),
+          integrationMetadata: {
+            demo: true,
+            provider: "mock",
+            stage: "pre_submit",
+            seededScenario: "ib_ready_woodgrove_eosm",
+          },
+        },
+      ],
     },
     {
       caseId: "EoSM-2026-200007",
@@ -932,6 +986,7 @@ async function main(): Promise<void> {
         },
       ],
     },
+    /** **Salesforce IB:** no seeded IB row — intake complete; CX demos **Create IB case** end-to-end against mock provider. */
     {
       caseId: "EoSM-2026-200008",
       requestType: RequestType.EoSM,
@@ -1473,7 +1528,10 @@ async function main(): Promise<void> {
         },
       ],
     },
-    /** Early-stage **Awaiting Info**: missing CMDB serial export — BU ladder not yet runnable (contrast with EoSM-200007 mid-pipeline info return). */
+    /**
+     * Early-stage **Awaiting Info**: missing CMDB serial export — BU ladder not yet runnable (contrast with EoSM-200007 mid-pipeline info return).
+     * **Salesforce IB:** seeded `FAILED` row + activity log (attempt/failure); CX **Retry** succeeds via mock (`priorFailedAttempt`).
+     */
     {
       caseId: "EoVSS-2026-200015",
       requestType: RequestType.EoVSS,
@@ -1560,7 +1618,26 @@ async function main(): Promise<void> {
           assignedTeamId: cxOpsTeam.id,
         },
       ],
-      refs: [{ type: ExternalReferenceType.QUOTE_ID, referenceId: "QTE-MFG-2026-661900", externalStatus: "Awaiting data" }],
+      refs: [
+        { type: ExternalReferenceType.QUOTE_ID, referenceId: "QTE-MFG-2026-661900", externalStatus: "Awaiting data" },
+        {
+          type: ExternalReferenceType.SALESFORCE_IB,
+          referenceId: null,
+          externalKey: null,
+          externalRecordUrl: null,
+          externalSystemName: "Salesforce",
+          integrationState: ExternalReferenceIntegrationState.FAILED,
+          lastAttemptAt: new Date("2026-01-14T11:20:00.000Z"),
+          lastErrorMessage:
+            "MOCK_FORCED_FAILURE: Simulated Salesforce error (demo): first attempt fails for this case id; a retry after recording failure succeeds.",
+          integrationMetadata: {
+            demo: true,
+            provider: "mock",
+            scenario: "fail_first_attempt",
+            seededScenario: "ib_failed_van_arsdel_retry",
+          },
+        },
+      ],
     },
   ];
 
@@ -1665,6 +1742,14 @@ async function main(): Promise<void> {
             referenceType: r.type,
             referenceId: r.referenceId,
             externalStatus: r.externalStatus,
+            externalSystemName: r.externalSystemName ?? null,
+            integrationState: r.integrationState ?? null,
+            externalKey: r.externalKey ?? null,
+            externalRecordUrl: r.externalRecordUrl ?? null,
+            lastAttemptAt: r.lastAttemptAt ?? null,
+            lastErrorMessage: r.lastErrorMessage ?? null,
+            integrationMetadata: r.integrationMetadata ?? undefined,
+            ...(r.notes !== undefined && r.notes !== null ? { notes: r.notes } : {}),
           },
         });
       }
@@ -1690,6 +1775,22 @@ async function main(): Promise<void> {
 
   const case1 = await prisma.case.findFirst({ where: { caseId: "EoVSS-2026-200001" } });
   if (case1) {
+    await prisma.activityLog.createMany({
+      data: [
+        {
+          caseId: case1.id,
+          userId: jordan.id,
+          action: "salesforce_ib_create_attempt",
+          details: "initial | EoVSS-2026-200001",
+        },
+        {
+          caseId: case1.id,
+          userId: jordan.id,
+          action: "salesforce_ib_created",
+          details: "SF Case 16310418 | 5006900000MERD1EAA (Salesforce IB mock provider)",
+        },
+      ],
+    });
     await prisma.comment.create({
       data: {
         caseId: case1.id,
@@ -1707,6 +1808,27 @@ async function main(): Promise<void> {
     });
   }
 
+  const vanArsdelCase = await prisma.case.findFirst({ where: { caseId: "EoVSS-2026-200015" } });
+  if (vanArsdelCase) {
+    await prisma.activityLog.createMany({
+      data: [
+        {
+          caseId: vanArsdelCase.id,
+          userId: priya.id,
+          action: "salesforce_ib_create_attempt",
+          details: "initial | EoVSS-2026-200015",
+        },
+        {
+          caseId: vanArsdelCase.id,
+          userId: priya.id,
+          action: "salesforce_ib_create_failed",
+          details:
+            "MOCK_FORCED_FAILURE: Simulated Salesforce error (demo): first attempt fails for this case id; a retry after recording failure succeeds.",
+        },
+      ],
+    });
+  }
+
   const demoEmails = [
     "cx.primary@local",
     "cx.priya@local",
@@ -1719,7 +1841,10 @@ async function main(): Promise<void> {
     "leader.demo@local",
     "account.inactive@local",
   ];
-  console.log("Seed complete. 10 users (8 with seeded workload, 2 empty-portfolio), 15 cases. Password:", DEMO_PASSWORD);
+  console.log(
+    "Seed complete. 10 users (8 with seeded workload, 2 empty-portfolio), 15 cases. Salesforce IB demos: 200001 Created, 200006 Ready, 200015 Failed+retry, 200008 live Create. Password:",
+    DEMO_PASSWORD
+  );
   console.log("Users:", demoEmails.join(", "));
 }
 

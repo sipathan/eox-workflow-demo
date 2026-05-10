@@ -84,6 +84,16 @@ enum ExternalReferenceType {
   QUOTE_ID
   VAP_ID
   APAS_NPI
+  /// Salesforce Issue Backlog / IB case (or equivalent Case record). Uses extended `ExternalReference` integration fields.
+  SALESFORCE_IB
+}
+
+/// Lifecycle for integration-backed external references (e.g. Salesforce IB). Null for QUOTE/VAP/APAS-only rows.
+enum ExternalReferenceIntegrationState {
+  NOT_CREATED
+  READY
+  CREATED
+  FAILED
 }
 
 /// Commercial outcome for quote / booking tracking (case-level).
@@ -357,17 +367,30 @@ model Attachment {
 }
 
 model ExternalReference {
-  id              String                  @id @default(cuid())
-  caseId          String
-  case            Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  taskId          String?
-  task            Task?                   @relation(fields: [taskId], references: [id])
-  referenceType   ExternalReferenceType
-  referenceId     String
-  externalStatus  String?
-  notes           String?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id            String                  @id @default(cuid())
+  caseId        String
+  case          Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  taskId        String?
+  task          Task?                   @relation(fields: [taskId], references: [id])
+  referenceType ExternalReferenceType
+  /// Primary external record identifier (e.g. Salesforce Case Id). Optional until an IB record exists in the external system.
+  referenceId   String?
+  /// Free-text status from the external system (e.g. SF case status). Distinct from `integrationState`.
+  externalStatus String?
+  notes         String?
+  /// External system label (e.g. "Salesforce"). Primarily for integration-backed references.
+  externalSystemName String?
+  /// App-orchestrated lifecycle for integration-backed references; null for legacy quote/VAP/APAS rows.
+  integrationState   ExternalReferenceIntegrationState?
+  /// Salesforce Case Number or other external business key (distinct from `referenceId`).
+  externalKey      String?
+  externalRecordUrl String?
+  lastAttemptAt     DateTime?
+  lastErrorMessage  String? @db.Text
+  /// Optional request/response or provider payload snapshots (demo + future real API).
+  integrationMetadata Json?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 
   @@index([caseId])
   @@index([taskId])

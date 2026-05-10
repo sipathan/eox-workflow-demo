@@ -1,0 +1,156 @@
+<mxfile host="app.diagrams.net" modified="2026-05-05T00:00:00.000Z" agent="cursor" version="22.1.0">
+  <!-- Three diagrams in ONE file: open at app.diagrams.net and use the PAGE TABS at the bottom (e.g. +, or click tab names). Reading this in Cursor/VS Code shows raw XML only — it is not "one picture". Lucidchart import often imports ONLY the first page; for Lucidchart use docs/architecture-01-system-context.drawio, architecture-02-containers.drawio, architecture-03-components.drawio separately. -->
+  <diagram id="context" name="1 - System context">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="pool-users" value="Users (browser)" style="swimlane;horizontal=0;startSize=28;fillColor=#E8F4FC;strokeColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="200" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="cx" value="CX Ops / Platform Admin&#xa;(create IB, manage workflow)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="pool-users">
+          <mxGeometry x="20" y="40" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="other" value="Account / BU / Finance / Leadership&#xa;(scoped visibility)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="pool-users">
+          <mxGeometry x="20" y="140" width="160" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="pool-app" value="EoX Workflow Platform (this app)" style="swimlane;horizontal=0;startSize=28;fillColor=#FFF4CC;strokeColor=#D6B656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="80" width="280" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="app" value="Orchestration layer&#xa;• Cases, tasks, RBAC&#xa;• External refs (Quote/VAP/APAS)&#xa;• Salesforce IB via provider" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;" vertex="1" parent="pool-app">
+          <mxGeometry x="30" y="50" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="note-scope" value="Not execution engines for CCW, VAP, APAS — tracked as references only." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#FFF9E6;strokeColor=#CC9900;" vertex="1" parent="pool-app">
+          <mxGeometry x="30" y="200" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="pool-ext" value="External / integration" style="swimlane;horizontal=0;startSize=28;fillColor=#E6F5E6;strokeColor=#82B366;" vertex="1" parent="1">
+          <mxGeometry x="680" y="80" width="260" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="mock" value="Salesforce IB provider — MOCK&#xa;(default, deterministic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="pool-ext">
+          <mxGeometry x="30" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sf" value="Salesforce Issue Backlog&#xa;(real API — future)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;dashed=1;" vertex="1" parent="pool-ext">
+          <mxGeometry x="30" y="160" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="cx" target="app">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="other" target="app">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="create / query (today)" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="app" target="mock">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="SALESFORCE_IB_PROVIDER=salesforce&#xa;(scaffold / future)" style="endArrow=block;dashed=1;html=1;rounded=0;" edge="1" parent="1" source="app" target="sf">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="containers" name="2 - Containers">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="browser" value="Web browser&#xa;(React UI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="80" y="200" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="next" value="Next.js — App Router&#xa;Server Components + Server Actions&#xa;(Node runtime)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;" vertex="1" parent="1">
+          <mxGeometry x="320" y="160" width="240" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="ib" value="Salesforce IB&#xa;getSalesforceIbProvider()&#xa;mock | salesforce (stub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F5E6;strokeColor=#82B366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="300" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="pg" value="PostgreSQL&#xa;(Prisma ORM)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F8CECC;strokeColor=#B85450;" vertex="1" parent="1">
+          <mxGeometry x="660" y="175" width="120" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="docker" value="Optional deploy: Docker Compose&#xa;• app container (next start)&#xa;• postgres:5432" style="shape=folder;fontStyle=1;spacingTop=10;tabWidth=40;tabHeight=14;tabPosition=left;html=1;fillColor=#F5F5F5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="640" y="360" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="c1" value="HTTPS / session cookie" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="browser" target="next">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c2" value="Prisma" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="next" target="pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c3" value="in-process call" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="next" target="ib">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c4" value="hosts" style="endArrow=open;dashed=1;html=1;rounded=0;" edge="1" parent="1" source="docker" target="next">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c5" style="endArrow=open;dashed=1;html=1;rounded=0;" edge="1" parent="1" source="docker" target="pg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="components" name="3 - Components (logical)">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="lane-ui" value="Client (browser)" style="swimlane;horizontal=0;startSize=24;fillColor=#E8F4FC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1060" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="pages" value="App Router pages&#xa;/ /cases /cases/new /cases/[id] /reports" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane-ui">
+          <mxGeometry x="40" y="40" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="comps" value="Components&#xa;DashboardShell, TaskRowForm, SalesforceIbCaseSection, …" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane-ui">
+          <mxGeometry x="360" y="40" width="320" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-srv" value="Server (Next.js)" style="swimlane;horizontal=0;startSize=24;fillColor=#FFF4CC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="1060" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="actions" value="Server Actions&#xa;case-workspace.ts, cases.ts, auth.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="40" y="40" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="rbac" value="RBAC + access&#xa;rbac.ts, case-access-projection.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="300" y="40" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="wf" value="Workflow&#xa;task-templates, task-activation, task-display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="580" y="40" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sib" value="Salesforce IB&#xa;eligibility, payload-from-case, providers (mock / REST stub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="lane-srv">
+          <mxGeometry x="40" y="130" width="360" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="val" value="Zod validations&#xa;case, case-workspace" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="440" y="130" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-data" value="Data" style="swimlane;horizontal=0;startSize=24;fillColor=#FDEDEC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="1060" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="prisma" value="Prisma Client" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane-data">
+          <mxGeometry x="40" y="35" width="160" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="db2" value="PostgreSQL&#xa;Case, Task, ExternalReference, ActivityLog, …" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F8CECC;strokeColor=#B85450;" vertex="1" parent="lane-data">
+          <mxGeometry x="260" y="25" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="k1" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="pages" target="actions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k2" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="comps" target="actions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k3" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="rbac">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k4" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="wf">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k5" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="sib">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k6" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="val">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k7" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="prisma">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k8" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="prisma" target="db2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

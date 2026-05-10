@@ -27,7 +27,7 @@ export async function demoLoginAction(formData: FormData): Promise<void> {
   const ok = await setSessionCookie(user.id);
   if (!ok) redirect("/?login=config");
 
-  redirect("/cases");
+  redirect("/");
 }
 
 export async function demoLogoutAction(): Promise<void> {
@@ -41,12 +41,12 @@ export async function demoLogoutAction(): Promise<void> {
  */
 export async function demoSwitchPersonaAction(formData: FormData): Promise<void> {
   if (!isDemoMode()) {
-    redirect("/cases");
+    redirect("/");
   }
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!isAllowedDemoLoginEmail(email)) {
-    redirect("/cases");
+    redirect("/");
   }
 
   const user = await prisma.user.findUnique({
@@ -54,7 +54,7 @@ export async function demoSwitchPersonaAction(formData: FormData): Promise<void>
     select: { id: true, isActive: true },
   });
   if (!user?.isActive) {
-    redirect("/cases");
+    redirect("/");
   }
 
   const ok = await setSessionCookie(user.id);
@@ -62,5 +62,5 @@ export async function demoSwitchPersonaAction(formData: FormData): Promise<void>
     redirect("/?login=config");
   }
 
-  redirect("/cases");
+  redirect("/");
 }

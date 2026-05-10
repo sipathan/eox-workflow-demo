@@ -1,0 +1,70 @@
+<mxfile host="app.diagrams.net" modified="2026-05-05T00:00:00.000Z" agent="cursor" version="22.1.0">
+  <diagram id="components" name="Components">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="lane-ui" value="Client (browser)" style="swimlane;horizontal=0;startSize=24;fillColor=#E8F4FC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1060" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="pages" value="App Router pages&#xa;/ /cases /cases/new /cases/[id] /reports" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane-ui">
+          <mxGeometry x="40" y="40" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="comps" value="Components&#xa;DashboardShell, TaskRowForm, SalesforceIbCaseSection, …" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane-ui">
+          <mxGeometry x="360" y="40" width="320" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-srv" value="Server (Next.js)" style="swimlane;horizontal=0;startSize=24;fillColor=#FFF4CC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="1060" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="actions" value="Server Actions&#xa;case-workspace.ts, cases.ts, auth.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="40" y="40" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="rbac" value="RBAC + access&#xa;rbac.ts, case-access-projection.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="300" y="40" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="wf" value="Workflow&#xa;task-templates, task-activation, task-display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="580" y="40" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="sib" value="Salesforce IB&#xa;eligibility, payload-from-case, providers (mock / REST stub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="lane-srv">
+          <mxGeometry x="40" y="130" width="360" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="val" value="Zod validations&#xa;case, case-workspace" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;" vertex="1" parent="lane-srv">
+          <mxGeometry x="440" y="130" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane-data" value="Data" style="swimlane;horizontal=0;startSize=24;fillColor=#FDEDEC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="1060" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="prisma" value="Prisma Client" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane-data">
+          <mxGeometry x="40" y="35" width="160" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="db2" value="PostgreSQL&#xa;Case, Task, ExternalReference, ActivityLog, …" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F8CECC;strokeColor=#B85450;" vertex="1" parent="lane-data">
+          <mxGeometry x="260" y="25" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="k1" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="pages" target="actions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k2" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="comps" target="actions">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k3" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="rbac">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k4" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="wf">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k5" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="sib">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k6" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="val">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k7" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="actions" target="prisma">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k8" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="prisma" target="db2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
